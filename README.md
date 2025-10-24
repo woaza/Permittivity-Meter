@@ -6,5 +6,5 @@ Board: NUCLEO-L476RG
 
 ## Externe Links
 
-für Online Sim: https://app.cirkitdesigner.com/project
+Für Online Sim der µC: https://docs.cirkitdesigner.com/component/46c022d9-5fc0-44c3-87da-f741bf7207b9/nucleo-l476rg
 
