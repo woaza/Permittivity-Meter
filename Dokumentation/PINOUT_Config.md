@@ -8,13 +8,13 @@ The goal is to create an Arduino-shaped shield with the external circuit (Twin-T
 
 ## Arduino-Compatible Pin Configuration for Permittivity Meter ReDesign
 
-This table details the pin configuration for the STM32L476RG microcontroller on the NUCLEO-L476RG board, designed for an Arduino-shaped shield with the Twin-T notch filter, OPA2690 stages, and NINA-W152 Bluetooth module.
+This table details the pin configuration for the STM32L476RG microcontroller on the NUCLEO-L476RG board, designed for an Arduino-shaped shield.
 
 | Arduino Pin | STM32 Pin | Function          | Mode in CubeMX                                      | Rationale                                      | Shield Connection        |
 |-------------|-----------|-------------------|----------------------------------------------------|------------------------------------------------|--------------------------|
 | A0          | PA0       | ADC (Notch Signal) | ADC1_IN5 Single-Ended (12-bit, continuous, 16x oversampling) | Samples undersampled filter output (~10 kHz) for FFT. | OPA2690 output to A0.    |
 | A2          | PA4       | DAC D1 (ε')       | DAC1_OUT1 External Pin (Buffered, S&H)             | Voltage for D1 frequency shift.                 | D1 varactor to A2.       |
-| A3          | PB0       | DAC D2 (ε'')      | DAC1_OUT2 External Pin (Buffered, S&H)             | Voltage for D2 Q-factor. Remap from PA5 if SPI conflict. | D2 varactor to A3.       |
+| A3          | PA5       | DAC D2 (ε'')      | DAC1_OUT2 External Pin (Buffered, S&H)             | Voltage for D2 Q-factor. Remap from PA5 if SPI conflict. | D2 varactor to A3.       |
 | D0 (RX)     | PA3       | USART2_RX         | Asynchronous UART (115200, 8N1)                    | Receives NINA-W152 responses.                   | NINA TX to D0.           |
 | D1 (TX)     | PA2       | USART2_TX         | Asynchronous UART (115200, 8N1)                    | Sends AT commands to NINA.                      | NINA RX to D1.           |
 | D2          | PA10      | GPIO_EXTI10       | External Interrupt (Falling Edge)                  | Button wake from STOP2.                        | Shield button to D2.     |
@@ -32,6 +32,7 @@ This table details the pin configuration for the STM32L476RG microcontroller on 
 
 
 ### Pinout View
+![alt text](image-6.png)
 ![alt text](image.png)
 
 ![alt text](image-1.png)

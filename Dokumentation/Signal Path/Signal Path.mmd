@@ -1,0 +1,39 @@
+---
+config:
+  layout: dagre
+  
+---
+%%{init: {"theme":"default","themeVariables":{"background":"#ffffff"}} }%%
+flowchart LR
+ subgraph MCU["STM32L476RG MCU"]
+        MCO["PA8: RCC_MCO1 Output<br>20 MHz Square Wave<br>3.3Vpp, Fixed 50% Duty<br>HAL_RCC_MCOConfig"]
+        DAC@{ label: "DAC Channels<br>PA4 (D1: Freq/ε')<br>PA5 (D2: Q/ε'')<br>0-2.5V (Amp to 0-5V)<br>HAL_DAC_SetValue" }
+        GPIO["PC1/PC2: GPIO Outputs<br>Gain Switch (BJTs)<br>1x/10x/100x<br>HAL_GPIO_WritePin"]
+        ADC["PC0: ADC1_IN1 Input<br>Undersampling 122.5 kHz<br>Aliased to 30.6 kHz<br>HAL_ADC_Start_DMA<br>512 Samples Buffer"]
+        PROC@{ label: "Processing<br>CMSIS-DSP FFT (Radix-2)<br>Peak Amplitude Detection<br>Binary Search Tuning<br>ε' = 1 + ΔC_D1 / Csens<br>ε'' from ΔQ (LUT/Eq)" }
+        UART_BT["PA2/PA3: USART2<br>115200 baud<br>AT+UDSC for Data<br>HAL_UART_Transmit"]
+  end
+    MCO -- Digital Out --> FILTER["7th-Order Chebyshev LC Filter<br>C1/C7=470pF, L2/L6=330nH<br>C3/C5=680pF, L4=390nH<br>-3dB @20.74 MHz, -60dB @60 MHz<br>Sine Conversion, THD&lt;1%"]
+    FILTER -- "~0.5-1Vpp Sine" --> PREAMP["Pre-Amplifier OPA836<br>Non-Inverting G=+2<br>Rf=Rg=100Ω, Cin=10nF<br>Boost to 1-2Vpp, Isolation"]
+    PREAMP -- Low Distortion Sine --> NOTCH@{ label: "Twin-T Notch Filter<br>Csens ≈48pF (Snow Dielectric)<br>Varactors BB135 (D1/D2)<br>Resonance @20 MHz (Air)<br>Δf ∝ ε', ΔQ ∝ 1/ε''" }
+    NOTCH -- Attenuated Sine (~mVpp Min) --> TWOSTAGE["Two-Stage Amplifier OPA2690<br>Dual Channel, G=1-10 per Stage<br>Rf=500Ω, Rg=56Ω<br>Switched via BJTs (PC1/PC2)<br>Total G=1x/10x/100x (12.8-37.7 dB)"]
+    TWOSTAGE -- Amplified Sine (~2Vpp Max) --> POSTAMP["Post-Amplifier/Voltage Follower OPA836<br>Unity Gain Buffer<br>DC Offset 1.25V (Divider)<br>Rail-to-Rail, ADC Conditioning"]
+    POSTAMP -- "0-2.5V Offset Sine" --> ADC
+    DAC -- "Analog Bias (0-5V Amp)" --> NOTCH
+    GPIO -- Digital Control --> TWOSTAGE
+    ADC --> PROC
+    PROC -- Feedback Loop (Tune to Min Amp) --> DAC
+    PROC -- Calib/Meas (Air/Snow)<br>ε', ε'' Values --> UART_BT
+    UART_BT -- AT Commands --> BT@{ label: "NINA-W152 Bluetooth<br>UART RXD/TXD<br>BLE Mode (AT+UBTLE=1)<br>Wireless to App/PC<br>Data: ε'/ε'' String" }
+    DAC@{ shape: rect}
+    PROC@{ shape: rect}
+    NOTCH@{ shape: rect}
+    BT@{ shape: rect}
+    style NOTCH fill:#ffd,stroke:#f00,stroke-width:2px
+    style BT fill:#ddf,stroke:#333,stroke-width:2px
+    style MCU fill:#f9f,stroke:#333,stroke-width:2px
+    style DAC fill:#afa,stroke:#333,stroke-width:2px
+    style PROC fill:#ffa,stroke:#333,stroke-width:2px
+    
+
+
