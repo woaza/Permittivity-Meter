@@ -99,6 +99,10 @@ int main(void)
   MX_UART4_Init();
   /* USER CODE BEGIN 2 */
 
+  // MCO-Konfiguration: HSE als Quelle für MCO1 (PA8)
+  HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
