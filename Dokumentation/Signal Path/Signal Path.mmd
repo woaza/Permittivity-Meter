@@ -1,39 +1,103 @@
 ---
 config:
-  layout: dagre
-  
+  layout: elk
+  elk:
+    nodePlacementStrategy: SIMPLE
 ---
-%%{init: {"theme":"default","themeVariables":{"background":"#ffffff"}} }%%
-flowchart LR
- subgraph MCU["STM32L476RG MCU"]
-        MCO["PA8: RCC_MCO1 Output<br>20 MHz Square Wave<br>3.3Vpp, Fixed 50% Duty<br>HAL_RCC_MCOConfig"]
-        DAC@{ label: "DAC Channels<br>PA4 (D1: Freq/ε')<br>PA5 (D2: Q/ε'')<br>0-2.5V (Amp to 0-5V)<br>HAL_DAC_SetValue" }
-        GPIO["PC1/PC2: GPIO Outputs<br>Gain Switch (BJTs)<br>1x/10x/100x<br>HAL_GPIO_WritePin"]
-        ADC["PC0: ADC1_IN1 Input<br>Undersampling 122.5 kHz<br>Aliased to 30.6 kHz<br>HAL_ADC_Start_DMA<br>512 Samples Buffer"]
-        PROC@{ label: "Processing<br>CMSIS-DSP FFT (Radix-2)<br>Peak Amplitude Detection<br>Binary Search Tuning<br>ε' = 1 + ΔC_D1 / Csens<br>ε'' from ΔQ (LUT/Eq)" }
-        UART_BT["PA2/PA3: USART2<br>115200 baud<br>AT+UDSC for Data<br>HAL_UART_Transmit"]
+%%{init: {"theme":"default","themeVariables":{"primaryColor":"#f9f9f9","primaryTextColor":"#000","primaryBorderColor":"#333","lineColor":"#333","secondaryColor":"#e8f4f8","tertiaryColor":"#fff"}} }%%
+flowchart TB
+  
+  subgraph LEGEND[" SIGNAL LEGEND"]
+    direction LR
+    L1["<b>━━━━</b> Analog Signal"]
+    L2["<b>╍╍╍╍</b> Digital Signal"]
+    L3["<b>┄┄┄┄</b> Control Signal"]
+    L1 ~~~ L2 ~~~ L3
+    style L1 fill:#ffe6e6,stroke:#ff6b6b,stroke-width:4px,color:#000
+    style L2 fill:#e6f9f7,stroke:#4ecdc4,stroke-width:4px,stroke-dasharray: 8 4,color:#000
+    style L3 fill:#e8f9f3,stroke:#95e1d3,stroke-width:4px,stroke-dasharray: 3 3,color:#000
   end
-    MCO -- Digital Out --> FILTER["7th-Order Chebyshev LC Filter<br>C1/C7=470pF, L2/L6=330nH<br>C3/C5=680pF, L4=390nH<br>-3dB @20.74 MHz, -60dB @60 MHz<br>Sine Conversion, THD&lt;1%"]
-    FILTER -- "~0.5-1Vpp Sine" --> PREAMP["Pre-Amplifier OPA836<br>Non-Inverting G=+2<br>Rf=Rg=100Ω, Cin=10nF<br>Boost to 1-2Vpp, Isolation"]
-    PREAMP -- Low Distortion Sine --> NOTCH@{ label: "Twin-T Notch Filter<br>Csens ≈48pF (Snow Dielectric)<br>Varactors BB135 (D1/D2)<br>Resonance @20 MHz (Air)<br>Δf ∝ ε', ΔQ ∝ 1/ε''" }
-    NOTCH -- Attenuated Sine (~mVpp Min) --> TWOSTAGE["Two-Stage Amplifier OPA2690<br>Dual Channel, G=1-10 per Stage<br>Rf=500Ω, Rg=56Ω<br>Switched via BJTs (PC1/PC2)<br>Total G=1x/10x/100x (12.8-37.7 dB)"]
-    TWOSTAGE -- Amplified Sine (~2Vpp Max) --> POSTAMP["Post-Amplifier/Voltage Follower OPA836<br>Unity Gain Buffer<br>DC Offset 1.25V (Divider)<br>Rail-to-Rail, ADC Conditioning"]
-    POSTAMP -- "0-2.5V Offset Sine" --> ADC
-    DAC -- "Analog Bias (0-5V Amp)" --> NOTCH
-    GPIO -- Digital Control --> TWOSTAGE
-    ADC --> PROC
-    PROC -- Feedback Loop (Tune to Min Amp) --> DAC
-    PROC -- Calib/Meas (Air/Snow)<br>ε', ε'' Values --> UART_BT
-    UART_BT -- AT Commands --> BT@{ label: "NINA-W152 Bluetooth<br>UART RXD/TXD<br>BLE Mode (AT+UBTLE=1)<br>Wireless to App/PC<br>Data: ε'/ε'' String" }
-    DAC@{ shape: rect}
-    PROC@{ shape: rect}
-    NOTCH@{ shape: rect}
-    BT@{ shape: rect}
-    style NOTCH fill:#ffd,stroke:#f00,stroke-width:2px
-    style BT fill:#ddf,stroke:#333,stroke-width:2px
-    style MCU fill:#f9f,stroke:#333,stroke-width:2px
-    style DAC fill:#afa,stroke:#333,stroke-width:2px
-    style PROC fill:#ffa,stroke:#333,stroke-width:2px
+
+  subgraph MCU[" STM32L476RG MICROCONTROLLER"]
+    direction TB
     
+    subgraph OUTPUTS["Digital Outputs"]
+      MCO["<b>PA8: MCO1</b><br/> 20 MHz Clock<br/>3.3Vpp Square Wave<br/>50% Duty Cycle"]
+      GPIO["<b>PC1/PC2: GPIO</b><br/> Gain Control<br/>1x / 10x / 100x"]
+      UART_BT["<b>PA2/PA3: USART2</b><br/> 115200 baud<br/>Bluetooth Commands"]
+    end
+    
+    subgraph ANALOG_IO["Analog I/O"]
+      DAC["<b>DAC1/DAC2</b><br/>PA4: Frequency Tune (ε')<br/>PA5: Q-Factor Tune (ε'')<br/> 0-2.5V → 0-5V"]
+      ADC["<b>ADC1_IN1</b><br/>PC0: Signal Input<br/> 122.5 kHz Sampling<br/> Aliased to 30.6 kHz<br/>512 Samples/Buffer"]
+    end
+    
+    subgraph PROCESSING["Digital Processing Core"]
+      PROC["<b>DSP ENGINE</b><br/> CMSIS-DSP FFT (Radix-2)<br/> Peak Detection<br/> Binary Search Tuning<br/> ε' = 1 + ΔC/Csens<br/> ε'' from ΔQ"]
+    end
+  end
 
+  subgraph ANALOG_CHAIN[" ANALOG SIGNAL CHAIN"]
+    direction TB
+    
+    FILTER["<b>LC FILTER</b><br/> 7th-Order Chebyshev<br/>C: 470pF, 680pF<br/>L: 330nH, 390nH<br/>-3dB @20.74 MHz<br/>THD < 1%"]
+    
+    PREAMP["<b>PRE-AMP</b><br/> OPA836<br/>Gain: +2 (Non-Inv)<br/>Rf=Rg=100Ω<br/>Out: 1-2Vpp"]
+    
+    NOTCH["<b> TWIN-T NOTCH FILTER</b><br/> Csens ≈ 48pF<br/> Varactors BB135 (D1/D2)<br/> f₀ = 20 MHz (Air)<br/> Δf ∝ ε'<br/> ΔQ ∝ 1/ε''"]
+    
+    TWOSTAGE["<b>VARIABLE GAIN AMP</b><br/> OPA2690 Dual Stage<br/>Rf=500Ω, Rg=56Ω<br/> G = 1x/10x/100x<br/>(12.8-37.7 dB)"]
+    
+    POSTAMP["<b>BUFFER AMP</b><br/> OPA836<br/>Unity Gain (G=1)<br/>DC Offset: 1.25V<br/>Out: 0-2.5V"]
+  end
 
+  BT["<b> NINA-W152</b><br/>Bluetooth Module<br/>BLE Mode<br/>Wireless Output<br/>Data: ε' / ε''"]
+
+  MCO -.->|" 20 MHz Digital"| FILTER
+  FILTER ==>|" 0.5-1Vpp Sine"| PREAMP
+  PREAMP ==>|" 1-2Vpp Sine"| NOTCH
+  NOTCH ==>|" Attenuated mVpp"| TWOSTAGE
+  TWOSTAGE ==>|" Amplified 2Vpp"| POSTAMP
+  POSTAMP ==>|" 0-2.5V Conditioned"| ADC
+  
+  DAC ==>|" 0-5V Bias"| NOTCH
+  GPIO -.->|" Gain Select"| TWOSTAGE
+  
+  ADC -.->|" Digital Samples"| PROC
+  PROC -.->|" Feedback Control"| DAC
+  PROC -.->|" Measurement Data"| UART_BT
+  UART_BT -.->|" AT Commands"| BT
+
+  style MCU fill:#f0e6ff,stroke:#9b59b6,stroke-width:3px,color:#000
+  style OUTPUTS fill:#fff,stroke:#666,stroke-width:2px,stroke-dasharray: 5 5
+  style ANALOG_IO fill:#fff,stroke:#666,stroke-width:2px,stroke-dasharray: 5 5
+  style PROCESSING fill:#fff,stroke:#666,stroke-width:2px,stroke-dasharray: 5 5
+  
+  style ANALOG_CHAIN fill:#fff5e6,stroke:#e67e22,stroke-width:3px,color:#000
+  style FILTER fill:#e8f8f5,stroke:#16a085,stroke-width:2px
+  style PREAMP fill:#e8f8f5,stroke:#16a085,stroke-width:2px
+  style NOTCH fill:#fff3cd,stroke:#d63031,stroke-width:4px
+  style TWOSTAGE fill:#e8f8f5,stroke:#16a085,stroke-width:2px
+  style POSTAMP fill:#e8f8f5,stroke:#16a085,stroke-width:2px
+  
+  style MCO fill:#dfe6e9,stroke:#2d3436,stroke-width:2px
+  style GPIO fill:#dfe6e9,stroke:#2d3436,stroke-width:2px
+  style UART_BT fill:#dfe6e9,stroke:#2d3436,stroke-width:2px
+  style DAC fill:#d5f4e6,stroke:#00b894,stroke-width:2px
+  style ADC fill:#d5f4e6,stroke:#00b894,stroke-width:2px
+  style PROC fill:#ffeaa7,stroke:#fdcb6e,stroke-width:2px
+  style BT fill:#74b9ff,stroke:#0984e3,stroke-width:3px,color:#000
+  style LEGEND fill:#f8f9fa,stroke:#2d3436,stroke-width:3px,color:#000
+
+  linkStyle 0 stroke:#4ecdc4,stroke-width:4px,stroke-dasharray: 8 4
+  linkStyle 1 stroke:#ff6b6b,stroke-width:4px
+  linkStyle 2 stroke:#ff6b6b,stroke-width:4px
+  linkStyle 3 stroke:#ff6b6b,stroke-width:4px
+  linkStyle 4 stroke:#ff6b6b,stroke-width:4px
+  linkStyle 5 stroke:#ff6b6b,stroke-width:4px
+  linkStyle 6 stroke:#ff6b6b,stroke-width:4px
+  linkStyle 7 stroke:#95e1d3,stroke-width:4px,stroke-dasharray: 3 3
+  linkStyle 8 stroke:#4ecdc4,stroke-width:4px,stroke-dasharray: 8 4
+  linkStyle 9 stroke:#95e1d3,stroke-width:4px,stroke-dasharray: 3 3
+  linkStyle 10 stroke:#4ecdc4,stroke-width:4px,stroke-dasharray: 8 4
+  linkStyle 11 stroke:#4ecdc4,stroke-width:4px,stroke-dasharray: 8 4
