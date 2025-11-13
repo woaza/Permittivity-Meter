@@ -1,6 +1,6 @@
 # Understanding the Flowchart Signal Path
 The diagram illustrates the signal path and processing flow within a system based on the STM32L476RG microcontroller (MCU).
-
+![alt text](image-2.png)
 ## PA8: RCC_MCO1 Output
 PA8 is a multifunctional GPIO pin on the STM32L476RG (LQFP64 package, pin 41), capable of digital I/O, alternate functions (AF), and analog modes. It's sourced from an external 20 MHz quartz crystal (X3) for improved accuracy and stability—essential for precise permittivity measurements in varying mountain environments Since the quartz can withstand extreme tempreture (-20°C to 80°C).
 
