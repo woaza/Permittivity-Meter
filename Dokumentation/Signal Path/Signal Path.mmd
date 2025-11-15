@@ -4,10 +4,10 @@ config:
   elk:
     nodePlacementStrategy: SIMPLE
 ---
-%%{init: {"theme":"default","themeVariables":{"primaryColor":"#f9f9f9","primaryTextColor":"#000","primaryBorderColor":"#333","lineColor":"#333","secondaryColor":"#e8f4f8","tertiaryColor":"#fff"}} }%%
+%%{init: {"theme":"default","themeVariables":{"primaryColor":"#f9f9f9","primaryTextColor":"#000","primaryBorderColor":"#333","lineColor":"#333","secondaryColor":"#e8f4f8","tertiaryColor":"#fff","background":"#ffffff","mainBkg":"#ffffff","clusterBkg":"#ffffff"}} }%%
 flowchart LR
   
-  subgraph LEGEND[" SIGNAL LEGEND"]
+  subgraph LEGEND["SIGNAL LEGEND"]
     direction LR
     L1["<b>━━━━</b> Analog Signal"]
     L2["<b>╍╍╍╍</b> Digital Signal"]
@@ -18,55 +18,55 @@ flowchart LR
     style L3 fill:#e8f9f3,stroke:#95e1d3,stroke-width:4px,stroke-dasharray: 3 3,color:#000
   end
 
-  subgraph MCU[" STM32L476RG MICROCONTROLLER"]
+  subgraph MCU["STM32L476RG MICROCONTROLLER"]
     direction TB
     
     subgraph OUTPUTS["Digital Outputs"]
-      MCO["<b>PA8: MCO1</b><br/> 20 MHz Clock<br/>3.3Vpp Square Wave<br/>50% Duty Cycle"]
-      GPIO["<b>PC1/PC2: GPIO</b><br/> Gain Control<br/>1x / 10x / 100x"]
-      UART_BT["<b>PA2/PA3: USART2</b><br/> 115200 baud<br/>Bluetooth Commands"]
+      MCO["<b>PA8: MCO1</b><br/>20 MHz Clock<br/>3.3Vpp Square Wave<br/>50% Duty Cycle"]
+      GPIO["<b>PC1/PC2: GPIO</b><br/>Gain Control<br/>1x / 10x / 100x"]
+      UART_BT["<b>PA2/PA3: USART2</b><br/>115200 baud<br/>Bluetooth Commands"]
     end
     
     subgraph ANALOG_IO["Analog I/O"]
-      DAC["<b>DAC1/DAC2</b><br/>PA4: Frequency Tune (ε')<br/>PA5: Q-Factor Tune (ε'')<br/> 0-2.5V → 0-5V"]
-      ADC["<b>ADC1_IN1</b><br/>PC0: Signal Input<br/> 122.5 kHz Sampling<br/> Aliased to 30.6 kHz<br/>512 Samples/Buffer"]
+      DAC["<b>DAC1/DAC2</b><br/>PA4: Frequency Tune (ε')<br/>PA5: Q-Factor Tune (ε'')<br/>0-2.5V → 0-5V"]
+      ADC["<b>ADC1_IN1</b><br/>PC0: Signal Input<br/>122.5 kHz Sampling<br/>Aliased to 30.6 kHz<br/>512 Samples/Buffer"]
     end
     
     subgraph PROCESSING["Digital Processing Core"]
-      PROC["<b>DSP ENGINE</b><br/> CMSIS-DSP FFT (Radix-2)<br/> Peak Detection<br/> Binary Search Tuning<br/> ε' = 1 + ΔC/Csens<br/> ε'' from ΔQ"]
+      PROC["<b>DSP ENGINE</b><br/>CMSIS-DSP FFT (Radix-2)<br/>Peak Detection<br/>Binary Search Tuning<br/>ε' = 1 + ΔC/Csens<br/>ε'' from ΔQ"]
     end
   end
 
-  subgraph ANALOG_CHAIN[" ANALOG SIGNAL CHAIN"]
+  subgraph ANALOG_CHAIN["ANALOG SIGNAL CHAIN"]
     direction TB
     
-    FILTER["<b>LC FILTER</b><br/> 7th-Order Chebyshev<br/>C: 470pF, 680pF<br/>L: 330nH, 390nH<br/>-3dB @20.74 MHz<br/>THD < 1%"]
+    FILTER["<b>LC FILTER</b><br/>7th-Order Chebyshev<br/>C: 470pF, 680pF<br/>L: 330nH, 390nH<br/>-3dB @20.74 MHz<br/>THD < 1%"]
     
-    PREAMP["<b>PRE-AMP</b><br/> OPA836<br/>Gain: +2 (Non-Inv)<br/>Rf=Rg=100Ω<br/>Out: 1-2Vpp"]
+    PREAMP["<b>PRE-AMP</b><br/>OPA836<br/>Gain: +2 (Non-Inv)<br/>Rf=Rg=100Ω<br/>Out: 1-2Vpp"]
     
-    NOTCH["<b> TWIN-T NOTCH FILTER</b><br/> Csens ≈ 48pF<br/> Varactors BB135 (D1/D2)<br/> f₀ = 20 MHz (Air)<br/> Δf ∝ ε'<br/> ΔQ ∝ 1/ε''"]
+    NOTCH["<b>TWIN-T NOTCH FILTER</b><br/>Csens ≈ 48pF<br/>Varactors BB135 (D1/D2)<br/>f₀ = 20 MHz (Air)<br/>Δf ∝ ε'<br/>ΔQ ∝ 1/ε''"]
     
-    TWOSTAGE["<b>VARIABLE GAIN AMP</b><br/> OPA2690 Dual Stage<br/>Rf=500Ω, Rg=56Ω<br/> G = 1x/10x/100x<br/>(12.8-37.7 dB)"]
+    TWOSTAGE["<b>VARIABLE GAIN AMP</b><br/>OPA2690 Dual Stage<br/>Rf=500Ω, Rg=56Ω<br/>G = 1x/10x/100x<br/>(12.8-37.7 dB)"]
     
-    POSTAMP["<b>BUFFER AMP</b><br/> OPA836<br/>Unity Gain (G=1)<br/>DC Offset: 1.25V<br/>Out: 0-2.5V"]
+    POSTAMP["<b>BUFFER AMP</b><br/>OPA836<br/>Unity Gain (G=1)<br/>DC Offset: 1.25V<br/>Out: 0-2.5V"]
   end
 
-  BT["<b> NINA-W152</b><br/>Bluetooth Module<br/>BLE Mode<br/>Wireless Output<br/>Data: ε' / ε''"]
+  BT["<b>NINA-W10</b><br/>Bluetooth Module<br/>BLE Mode<br/>Wireless Output<br/>Data: ε' / ε''"]
 
-  MCO -.->|" 20 MHz Digital"| FILTER
-  FILTER ==>|" 0.5-1Vpp Sine"| PREAMP
-  PREAMP ==>|" 1-2Vpp Sine"| NOTCH
-  NOTCH ==>|" Attenuated mVpp"| TWOSTAGE
-  TWOSTAGE ==>|" Amplified 2Vpp"| POSTAMP
-  POSTAMP ==>|" 0-2.5V Conditioned"| ADC
+  MCO -.->|"20 MHz Digital"| FILTER
+  FILTER ==>|"0.5-1Vpp Sine"| PREAMP
+  PREAMP ==>|"1-2Vpp Sine"| NOTCH
+  NOTCH ==>|"Attenuated mVpp"| TWOSTAGE
+  TWOSTAGE ==>|"Amplified 2Vpp"| POSTAMP
+  POSTAMP ==>|"0-2.5V Conditioned"| ADC
   
-  DAC ==>|" 0-5V Bias"| NOTCH
-  GPIO -.->|" Gain Select"| TWOSTAGE
+  DAC ==>|"0-5V Analog Bias"| NOTCH
+  GPIO -.->|"Gain Select"| TWOSTAGE
   
-  ADC -.->|" Digital Samples"| PROC
-  PROC -.->|" Feedback Control"| DAC
-  PROC -.->|" Measurement Data"| UART_BT
-  UART_BT -.->|" AT Commands"| BT
+  ADC -.->|"Digital Samples"| PROC
+  PROC -.->|"Feedback Control"| DAC
+  PROC -.->|"Measurement Data"| UART_BT
+  UART_BT -.->|"AT Commands"| BT
 
   style MCU fill:#f0e6ff,stroke:#9b59b6,stroke-width:3px,color:#000
   style OUTPUTS fill:#fff,stroke:#666,stroke-width:2px,stroke-dasharray: 5 5
