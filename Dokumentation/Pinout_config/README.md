@@ -80,8 +80,10 @@ NOTE: Ensure proper grounding and shielding to minimize noise interference durin
 | Input Range | 0-2.5V | DC offset at 1.25V from post-amplifier |
 
 
-### Pinout View
+# Pinout View
 ![Current Pinout View](image.png)
+
+![alt text](image-7.png)
 
 ![alt text](image-6.png)
 
