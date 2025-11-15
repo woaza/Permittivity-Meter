@@ -49,6 +49,8 @@ extern "C" {
 
 /* USER CODE END EM */
 
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
@@ -61,6 +63,14 @@ void Error_Handler(void);
 #define B1_GPIO_Port GPIOC
 #define NOTCH_AMP_IN_Pin GPIO_PIN_0
 #define NOTCH_AMP_IN_GPIO_Port GPIOC
+#define NINA_LED_RED_Pin GPIO_PIN_1
+#define NINA_LED_RED_GPIO_Port GPIOC
+#define NINA_LED_BLUE_Pin GPIO_PIN_2
+#define NINA_LED_BLUE_GPIO_Port GPIOC
+#define NINA_LED_GREEN_Pin GPIO_PIN_3
+#define NINA_LED_GREEN_GPIO_Port GPIOC
+#define NINA_RX_Pin GPIO_PIN_1
+#define NINA_RX_GPIO_Port GPIOA
 #define FRQ_TN_Pin GPIO_PIN_4
 #define FRQ_TN_GPIO_Port GPIOA
 #define Q_FACT_TN_Pin GPIO_PIN_5
@@ -69,6 +79,8 @@ void Error_Handler(void);
 #define STATUS_LED_GPIO_Port GPIOA
 #define MEAS_LED_Pin GPIO_PIN_7
 #define MEAS_LED_GPIO_Port GPIOA
+#define OP_DIS_Pin GPIO_PIN_4
+#define OP_DIS_GPIO_Port GPIOC
 #define ERR_LED_Pin GPIO_PIN_1
 #define ERR_LED_GPIO_Port GPIOB
 #define EXCITE_LED_Pin GPIO_PIN_7
@@ -77,10 +89,22 @@ void Error_Handler(void);
 #define GAIN_SLCT_1_GPIO_Port GPIOC
 #define GAIN_SLCT_2_Pin GPIO_PIN_9
 #define GAIN_SLCT_2_GPIO_Port GPIOC
+#define NOCH_20M_IN_Pin GPIO_PIN_9
+#define NOCH_20M_IN_GPIO_Port GPIOA
+#define NINA_RST_Pin GPIO_PIN_11
+#define NINA_RST_GPIO_Port GPIOA
+#define NINA_STOP_Pin GPIO_PIN_12
+#define NINA_STOP_GPIO_Port GPIOA
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
+#define NINA_TX_Pin GPIO_PIN_10
+#define NINA_TX_GPIO_Port GPIOC
+#define NINA_RTS_Pin GPIO_PIN_11
+#define NINA_RTS_GPIO_Port GPIOC
+#define NINA_DTR_Pin GPIO_PIN_12
+#define NINA_DTR_GPIO_Port GPIOC
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
 #define ERR_LEDB6_Pin GPIO_PIN_6
