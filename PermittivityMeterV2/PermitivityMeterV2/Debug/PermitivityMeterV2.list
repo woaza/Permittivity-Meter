@@ -35,17 +35,17 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   CONTENTS, READONLY, DEBUGGING, OCTETS
  15 .debug_rnglists 00000f5a  00000000  00000000  0001fcb0  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 16 .debug_macro  0002875a  00000000  00000000  00020c0a  2**0
+ 16 .debug_macro  000025ac  00000000  00000000  00020c0a  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_line   000165dc  00000000  00000000  00049364  2**0
+ 17 .debug_line   000165dc  00000000  00000000  000231b6  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_str    001044e6  00000000  00000000  0005f940  2**0
+ 18 .debug_str    001044d6  00000000  00000000  00039792  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .comment      00000043  00000000  00000000  00163e26  2**0
+ 19 .comment      00000043  00000000  00000000  0013dc68  2**0
                   CONTENTS, READONLY
- 20 .debug_frame  0000546c  00000000  00000000  00163e6c  2**2
+ 20 .debug_frame  0000546c  00000000  00000000  0013dcac  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 21 .debug_line_str 0000004b  00000000  00000000  001692d8  2**0
+ 21 .debug_line_str 00000085  00000000  00000000  00143118  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -502,8 +502,8 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
  8000592:	2302      	movs	r3, #2
  8000594:	653b      	str	r3, [r7, #80]	@ 0x50
-  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
- 8000596:	2302      	movs	r3, #2
+  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV8;
+ 8000596:	2308      	movs	r3, #8
  8000598:	657b      	str	r3, [r7, #84]	@ 0x54
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
  800059a:	f107 0314 	add.w	r3, r7, #20
@@ -536,9 +536,9 @@ void SystemClock_Config(void)
  80005be:	2300      	movs	r3, #0
  80005c0:	613b      	str	r3, [r7, #16]
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
  80005c2:	463b      	mov	r3, r7
- 80005c4:	2104      	movs	r1, #4
+ 80005c4:	2101      	movs	r1, #1
  80005c6:	4618      	mov	r0, r3
  80005c8:	f002 ff80 	bl	80034cc <HAL_RCC_ClockConfig>
  80005cc:	4603      	mov	r3, r0
@@ -1106,7 +1106,8 @@ static void MX_TIM1_Init(void)
  80008e2:	f000 f90b 	bl	8000afc <Error_Handler>
   }
   /* USER CODE BEGIN TIM1_Init 2 */
-
+  	// pwm_is_running = 0;
+     //pwm_duty_cycle = PWM_DUTY_CYCLE_DEFAULT;
   /* USER CODE END TIM1_Init 2 */
   HAL_TIM_MspPostInit(&htim1);
  80008e6:	4803      	ldr	r0, [pc, #12]	@ (80008f4 <MX_TIM1_Init+0x150>)
@@ -1577,8 +1578,8 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
     PeriphClkInit.PLLSAI1.PLLSAI1M = 1;
  8000b92:	2301      	movs	r3, #1
  8000b94:	61fb      	str	r3, [r7, #28]
-    PeriphClkInit.PLLSAI1.PLLSAI1N = 10;
- 8000b96:	230a      	movs	r3, #10
+    PeriphClkInit.PLLSAI1.PLLSAI1N = 8;
+ 8000b96:	2308      	movs	r3, #8
  8000b98:	623b      	str	r3, [r7, #32]
     PeriphClkInit.PLLSAI1.PLLSAI1P = RCC_PLLP_DIV7;
  8000b9a:	2307      	movs	r3, #7
@@ -2325,48 +2326,108 @@ void SystemInit(void)
  8000f8c:	e000ed00 	.word	0xe000ed00
 
 08000f90 <Reset_Handler>:
+
+    .section	.text.Reset_Handler
+	.weak	Reset_Handler
+	.type	Reset_Handler, %function
+Reset_Handler:
+  ldr   sp, =_estack    /* Set stack pointer */
  8000f90:	f8df d034 	ldr.w	sp, [pc, #52]	@ 8000fc8 <LoopForever+0x2>
+
+/* Call the clock system initialization function.*/
+    bl  SystemInit
  8000f94:	f7ff ffea 	bl	8000f6c <SystemInit>
+
+/* Copy the data segment initializers from flash to SRAM */
+  ldr r0, =_sdata
  8000f98:	480c      	ldr	r0, [pc, #48]	@ (8000fcc <LoopForever+0x6>)
+  ldr r1, =_edata
  8000f9a:	490d      	ldr	r1, [pc, #52]	@ (8000fd0 <LoopForever+0xa>)
+  ldr r2, =_sidata
  8000f9c:	4a0d      	ldr	r2, [pc, #52]	@ (8000fd4 <LoopForever+0xe>)
+  movs r3, #0
  8000f9e:	2300      	movs	r3, #0
+  b LoopCopyDataInit
  8000fa0:	e002      	b.n	8000fa8 <LoopCopyDataInit>
 
 08000fa2 <CopyDataInit>:
+
+CopyDataInit:
+  ldr r4, [r2, r3]
  8000fa2:	58d4      	ldr	r4, [r2, r3]
+  str r4, [r0, r3]
  8000fa4:	50c4      	str	r4, [r0, r3]
+  adds r3, r3, #4
  8000fa6:	3304      	adds	r3, #4
 
 08000fa8 <LoopCopyDataInit>:
+
+LoopCopyDataInit:
+  adds r4, r0, r3
  8000fa8:	18c4      	adds	r4, r0, r3
+  cmp r4, r1
  8000faa:	428c      	cmp	r4, r1
+  bcc CopyDataInit
  8000fac:	d3f9      	bcc.n	8000fa2 <CopyDataInit>
+  
+/* Zero fill the bss segment. */
+  ldr r2, =_sbss
  8000fae:	4a0a      	ldr	r2, [pc, #40]	@ (8000fd8 <LoopForever+0x12>)
+  ldr r4, =_ebss
  8000fb0:	4c0a      	ldr	r4, [pc, #40]	@ (8000fdc <LoopForever+0x16>)
+  movs r3, #0
  8000fb2:	2300      	movs	r3, #0
+  b LoopFillZerobss
  8000fb4:	e001      	b.n	8000fba <LoopFillZerobss>
 
 08000fb6 <FillZerobss>:
+
+FillZerobss:
+  str  r3, [r2]
  8000fb6:	6013      	str	r3, [r2, #0]
+  adds r2, r2, #4
  8000fb8:	3204      	adds	r2, #4
 
 08000fba <LoopFillZerobss>:
+
+LoopFillZerobss:
+  cmp r2, r4
  8000fba:	42a2      	cmp	r2, r4
+  bcc FillZerobss
  8000fbc:	d3fb      	bcc.n	8000fb6 <FillZerobss>
+
+/* Call static constructors */
+    bl __libc_init_array
  8000fbe:	f004 fe75 	bl	8005cac <__libc_init_array>
+/* Call the application's entry point.*/
+	bl	main
  8000fc2:	f7ff fa97 	bl	80004f4 <main>
 
 08000fc6 <LoopForever>:
+
+LoopForever:
+    b LoopForever
  8000fc6:	e7fe      	b.n	8000fc6 <LoopForever>
+  ldr   sp, =_estack    /* Set stack pointer */
  8000fc8:	20018000 	.word	0x20018000
+  ldr r0, =_sdata
  8000fcc:	20000000 	.word	0x20000000
+  ldr r1, =_edata
  8000fd0:	2000000c 	.word	0x2000000c
+  ldr r2, =_sidata
  8000fd4:	08005d64 	.word	0x08005d64
+  ldr r2, =_sbss
  8000fd8:	2000000c 	.word	0x2000000c
+  ldr r4, =_ebss
  8000fdc:	200001d0 	.word	0x200001d0
 
 08000fe0 <ADC1_2_IRQHandler>:
+ * @retval : None
+*/
+    .section	.text.Default_Handler,"ax",%progbits
+Default_Handler:
+Infinite_Loop:
+	b	Infinite_Loop
  8000fe0:	e7fe      	b.n	8000fe0 <ADC1_2_IRQHandler>
 	...
 
