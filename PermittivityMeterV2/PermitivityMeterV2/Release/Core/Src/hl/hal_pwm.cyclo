@@ -1,0 +1,6 @@
+../Core/Src/hl/hal_pwm.c:33:6:HAL_PWM_Init	2
+../Core/Src/hl/hal_pwm.c:55:6:HAL_PWM_Start	3
+../Core/Src/hl/hal_pwm.c:66:6:HAL_PWM_Stop	3
+../Core/Src/hl/hal_pwm.c:77:6:HAL_PWM_Set_Duty_Cycle	2
+../Core/Src/hl/hal_pwm.c:87:9:HAL_PWM_Get_Duty_Cycle	1
+../Core/Src/hl/hal_pwm.c:92:6:HAL_PWM_Is_Running	1

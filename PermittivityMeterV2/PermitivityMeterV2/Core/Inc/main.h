@@ -75,8 +75,8 @@ void Error_Handler(void);
 #define FRQ_TN_GPIO_Port GPIOA
 #define Q_FACT_TN_Pin GPIO_PIN_5
 #define Q_FACT_TN_GPIO_Port GPIOA
-#define STATUS_LED_Pin GPIO_PIN_6
-#define STATUS_LED_GPIO_Port GPIOA
+#define INIT_LED_Pin GPIO_PIN_6
+#define INIT_LED_GPIO_Port GPIOA
 #define MEAS_LED_Pin GPIO_PIN_7
 #define MEAS_LED_GPIO_Port GPIOA
 #define OP_DIS_Pin GPIO_PIN_4
@@ -89,8 +89,8 @@ void Error_Handler(void);
 #define GAIN_SLCT_1_GPIO_Port GPIOC
 #define GAIN_SLCT_2_Pin GPIO_PIN_9
 #define GAIN_SLCT_2_GPIO_Port GPIOC
-#define NOCH_20M_IN_Pin GPIO_PIN_9
-#define NOCH_20M_IN_GPIO_Port GPIOA
+#define SQR_20M_OUT_Pin GPIO_PIN_9
+#define SQR_20M_OUT_GPIO_Port GPIOA
 #define NINA_RST_Pin GPIO_PIN_11
 #define NINA_RST_GPIO_Port GPIOA
 #define NINA_STOP_Pin GPIO_PIN_12

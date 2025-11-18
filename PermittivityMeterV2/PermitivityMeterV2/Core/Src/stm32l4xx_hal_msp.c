@@ -280,12 +280,12 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim)
     /**TIM1 GPIO Configuration
     PA9     ------> TIM1_CH2
     */
-    GPIO_InitStruct.Pin = NOCH_20M_IN_Pin;
+    GPIO_InitStruct.Pin = SQR_20M_OUT_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF1_TIM1;
-    HAL_GPIO_Init(NOCH_20M_IN_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(SQR_20M_OUT_GPIO_Port, &GPIO_InitStruct);
 
     /* USER CODE BEGIN TIM1_MspPostInit 1 */
 
