@@ -55,7 +55,6 @@ The goal is to create shield with the external circuit (Twin-T notch filter, 7th
 | PC1 | NINA_LED_RED | GPIO Input | Digital Input | CN7 | 36 | NINA module red LED status read-back |
 | PC2 | NINA_LED_BLUE | GPIO Input | Digital Input | CN7 | 35 | NINA module blue LED status read-back |
 | PC3 | NINA_LED_GREEN | GPIO Input | Digital Input | CN7 | 37 | NINA module green LED status read-back |
-| PC11 | NINA_RTS | GPIO Input | Digital Input | CN7 | 2 | NINA-W152 RTS flow control |
 
 ### User Interface
 | Pin | User Label | Function | Signal Type | Connector | Pin # | Purpose |
