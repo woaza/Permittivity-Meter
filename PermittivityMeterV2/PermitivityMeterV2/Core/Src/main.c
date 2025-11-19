@@ -121,6 +121,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   /* Drivers init function calls*/
+  HAL_PWM_Init(&htim1);
   HAL_PWM_SetFrequency(20000000UL);
   HAL_PWM_SetDutyCycle(50);
   HAL_PWM_Start();
