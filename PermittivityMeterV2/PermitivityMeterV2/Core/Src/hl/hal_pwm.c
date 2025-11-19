@@ -3,7 +3,7 @@
   * @file    hal_pwm.c
   * @brief   PWM hardware abstraction layer implementation
   * @author  Majdedin Al Rashid
-  * @date    2025
+  * @date    18.11.2025
   ******************************************************************************
   * @attention
   *
@@ -42,7 +42,8 @@ static PWM_StatusTypeDef PWM_Configure_Timer(uint32_t frequency_hz, uint8_t duty
  */
 static uint32_t PWM_Calculate_Pulse(uint8_t duty_cycle, uint32_t period)
 {
-    if (duty_cycle > 100) {
+    if (duty_cycle > 100)
+    {
         duty_cycle = 100;
     }
     return (period * duty_cycle) / 100;
@@ -56,11 +57,13 @@ static uint32_t PWM_Calculate_Pulse(uint8_t duty_cycle, uint32_t period)
  */
 static PWM_StatusTypeDef PWM_Configure_Timer(uint32_t frequency_hz, uint8_t duty_cycle)
 {
-    if (htim_pwm == NULL) {
+    if (htim_pwm == NULL)
+    {
         return PWM_ERROR_NOT_INITIALIZED;
     }
 
-    if (duty_cycle > 100) {
+    if (duty_cycle > 100)
+    {
         return PWM_ERROR_INVALID_PARAM;
     }
 
@@ -72,23 +75,27 @@ static PWM_StatusTypeDef PWM_Configure_Timer(uint32_t frequency_hz, uint8_t duty
     uint32_t period = 0;
 
     // Try to find optimal prescaler and period values
-    for (prescaler = 0; prescaler < 65536; prescaler++) {
+    for (prescaler = 0; prescaler < 65536; prescaler++)
+    {
         uint32_t timer_freq = PWM_TIMER_CLOCK / (prescaler + 1);
         period = (timer_freq / frequency_hz) - 1;
 
-        if (period <= 65535 && period > 0) {
+        if (period <= 65535 && period > 0)
+        {
             break;
         }
     }
 
     // Check if valid configuration was found
-    if (prescaler >= 65536 || period == 0 || period > 65535) {
+    if (prescaler >= 65536 || period == 0 || period > 65535)
+    {
         return PWM_ERROR_INVALID_PARAM;
     }
 
     // Stop timer if running
     bool was_running = pwm_is_running;
-    if (was_running) {
+    if (was_running)
+    {
         HAL_TIM_PWM_Stop(htim_pwm, PWM_CHANNEL);
     }
 
@@ -108,7 +115,8 @@ static PWM_StatusTypeDef PWM_Configure_Timer(uint32_t frequency_hz, uint8_t duty
     htim_pwm->Instance->EGR = TIM_EGR_UG;
 
     // Restart timer if it was running
-    if (was_running) {
+    if (was_running)
+    {
         HAL_TIM_PWM_Start(htim_pwm, PWM_CHANNEL);
     }
 
@@ -128,7 +136,8 @@ static PWM_StatusTypeDef PWM_Configure_Timer(uint32_t frequency_hz, uint8_t duty
  */
 PWM_StatusTypeDef HAL_PWM_Init(TIM_HandleTypeDef *htim)
 {
-    if (htim == NULL) {
+    if (htim == NULL)
+    {
         return PWM_ERROR_INVALID_PARAM;
     }
 
@@ -156,15 +165,18 @@ PWM_StatusTypeDef HAL_PWM_Init(TIM_HandleTypeDef *htim)
  */
 PWM_StatusTypeDef HAL_PWM_Start(void)
 {
-    if (htim_pwm == NULL) {
+    if (htim_pwm == NULL)
+    {
         return PWM_ERROR_NOT_INITIALIZED;
     }
 
-    if (pwm_is_running) {
+    if (pwm_is_running)
+    {
         return PWM_OK;  // Already running
     }
 
-    if (HAL_TIM_PWM_Start(htim_pwm, PWM_CHANNEL) != HAL_OK) {
+    if (HAL_TIM_PWM_Start(htim_pwm, PWM_CHANNEL) != HAL_OK)
+    {
         return PWM_ERROR;
     }
 
@@ -178,15 +190,18 @@ PWM_StatusTypeDef HAL_PWM_Start(void)
  */
 PWM_StatusTypeDef HAL_PWM_Stop(void)
 {
-    if (htim_pwm == NULL) {
+    if (htim_pwm == NULL)
+    {
         return PWM_ERROR_NOT_INITIALIZED;
     }
 
-    if (!pwm_is_running) {
+    if (!pwm_is_running)
+    {
         return PWM_OK;  // Already stopped
     }
 
-    if (HAL_TIM_PWM_Stop(htim_pwm, PWM_CHANNEL) != HAL_OK) {
+    if (HAL_TIM_PWM_Stop(htim_pwm, PWM_CHANNEL) != HAL_OK)
+    {
         return PWM_ERROR;
     }
 
@@ -201,11 +216,13 @@ PWM_StatusTypeDef HAL_PWM_Stop(void)
  */
 PWM_StatusTypeDef HAL_PWM_SetDutyCycle(uint8_t duty_cycle)
 {
-    if (htim_pwm == NULL) {
+    if (htim_pwm == NULL)
+    {
         return PWM_ERROR_NOT_INITIALIZED;
     }
 
-    if (duty_cycle > 100) {
+    if (duty_cycle > 100)
+    {
         return PWM_ERROR_INVALID_PARAM;
     }
 
@@ -227,11 +244,13 @@ PWM_StatusTypeDef HAL_PWM_SetDutyCycle(uint8_t duty_cycle)
  */
 PWM_StatusTypeDef HAL_PWM_SetFrequency(uint32_t frequency_hz)
 {
-    if (htim_pwm == NULL) {
+    if (htim_pwm == NULL)
+    {
         return PWM_ERROR_NOT_INITIALIZED;
     }
 
-    if (frequency_hz == 0 || frequency_hz > PWM_TIMER_CLOCK) {
+    if (frequency_hz == 0 || frequency_hz > PWM_TIMER_CLOCK)
+    {
         return PWM_ERROR_INVALID_PARAM;
     }
 
@@ -263,4 +282,19 @@ uint32_t HAL_PWM_GetFrequency(void)
 bool HAL_PWM_IsRunning(void)
 {
     return (pwm_is_running != 0);
+}
+
+/**
+ * @brief Update PWM pulsing effect (call periodically)
+ * @retval None
+ */
+void HAL_PWM_Pulse_Update(void)
+{
+    static uint8_t duty = 0;
+    static int8_t step = 1;
+
+    HAL_PWM_SetDutyCycle(duty);
+    duty += step;
+    if (duty >= 100) step = -1;
+    if (duty <= 0) step = 1;
 }

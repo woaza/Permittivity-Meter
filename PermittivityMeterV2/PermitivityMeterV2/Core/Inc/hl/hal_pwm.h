@@ -94,6 +94,12 @@ extern "C"
 	 */
 	bool HAL_PWM_IsRunning(void);
 
+	/**
+	 * @brief Update PWM pulsing effect (call periodically)
+	 * @retval None
+	 */
+	void HAL_PWM_Pulse_Update(void);
+
 	#ifdef __cplusplus
 }
 #endif
