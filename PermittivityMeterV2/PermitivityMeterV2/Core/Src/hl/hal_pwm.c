@@ -92,28 +92,20 @@ static PWM_StatusTypeDef PWM_Configure_Timer(uint32_t frequency_hz, uint8_t duty
         HAL_TIM_PWM_Stop(htim_pwm, PWM_CHANNEL);
     }
 
-    // Update timer configuration
+    // Update timer configuration (prescaler and period only)
     htim_pwm->Init.Prescaler = prescaler;
     htim_pwm->Init.Period = period;
 
-    // Reinitialize timer base
-    if (HAL_TIM_Base_Init(htim_pwm) != HAL_OK) {
-        return PWM_ERROR;
-    }
+    // Apply new prescaler and period values to hardware registers
+    __HAL_TIM_SET_PRESCALER(htim_pwm, prescaler);
+    __HAL_TIM_SET_AUTORELOAD(htim_pwm, period);
 
-    // Configure PWM channel
-    TIM_OC_InitTypeDef sConfigOC = {0};
-    sConfigOC.OCMode = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse = PWM_Calculate_Pulse(duty_cycle, period);
-    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-    sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
-    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-    sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
-    sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+    // Update pulse width (duty cycle)
+    uint32_t pulse = PWM_Calculate_Pulse(duty_cycle, period);
+    __HAL_TIM_SET_COMPARE(htim_pwm, PWM_CHANNEL, pulse);
 
-    if (HAL_TIM_PWM_ConfigChannel(htim_pwm, &sConfigOC, PWM_CHANNEL) != HAL_OK) {
-        return PWM_ERROR;
-    }
+    // Generate update event to load the new values
+    htim_pwm->Instance->EGR = TIM_EGR_UG;
 
     // Restart timer if it was running
     if (was_running) {
@@ -140,12 +132,22 @@ PWM_StatusTypeDef HAL_PWM_Init(TIM_HandleTypeDef *htim)
         return PWM_ERROR_INVALID_PARAM;
     }
 
+    // Store timer handle - CubeMX already configured the timer
     htim_pwm = htim;
     pwm_is_running = 0;
-    pwm_duty_cycle = PWM_DUTY_CYCLE_DEFAULT;
 
-    // Configure timer with default frequency and duty cycle
-    return PWM_Configure_Timer(pwm_frequency, pwm_duty_cycle);
+    // Read current configuration from CubeMX settings
+    uint32_t prescaler = htim_pwm->Init.Prescaler;
+    uint32_t period = htim_pwm->Init.Period;
+
+    // Calculate current frequency from CubeMX settings
+    pwm_frequency = PWM_TIMER_CLOCK / ((prescaler + 1) * (period + 1));
+
+    // Read current pulse value to determine duty cycle
+    uint32_t pulse = __HAL_TIM_GET_COMPARE(htim_pwm, PWM_CHANNEL);
+    pwm_duty_cycle = (pulse * 100) / (period + 1);
+
+    return PWM_OK;
 }
 
 /**
