@@ -1,0 +1,46 @@
+# Snow Permittivity Meter verification script
+# Use with: python tools/pc_cli.py --port <COMx> --script tools/cli_workflow.txt
+# Commands marked EXPECT indicate the frames you should see next.
+
+# 1. Connect and confirm readiness
+conn
+# EXPECT: STAT:RDY
+
+# 2. Snapshot LCD to make sure INIT/IDLE status is shown
+lcd
+# EXPECT: DAT:LCD:L0:IDLE (or INIT) and DAT:LCD:L1:Ready/Need CAL
+
+# 3. Check LED states before actions
+leds
+# EXPECT: STAT:LED:S:1:M:0:E:0:R:0 when idle and calibrated
+
+# 4. Request recent logs to ensure FSM reset cleanly
+log
+# EXPECT: DAT:LOG entries including STATE transitions and RF drivers
+
+# 5. Trigger a calibration sweep
+cal
+# EXPECT: STAT:CAL (if mid-cal), then STAT:CAL_OK when complete
+
+# 6. Grab LCD + LED snapshots during calibration
+wait 2
+lcd
+leds
+
+# 7. Start a measurement run
+meas
+# EXPECT: STAT:MEAS followed by DAT:RES:ER:...:EI:...:DENS:...
+
+# 8. Dump trace data from the last sweep
+trace
+# EXPECT: DAT:TRACE:MEAS:<idx>:V:<voltage>:A:<amp>
+
+# 9. Simulate button press/release (should queue measurement in IDLE)
+btn-press
+btn-release
+# EXPECT: STAT:MEAS / DAT:RES again if calibration valid
+
+# 10. Final LCD/LED/log snapshots for verification
+lcd
+leds
+log
