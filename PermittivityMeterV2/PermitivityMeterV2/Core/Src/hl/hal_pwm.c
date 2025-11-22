@@ -20,7 +20,7 @@
 
 /* Private defines -----------------------------------------------------------*/
 #define PWM_CHANNEL         TIM_CHANNEL_2
-#define PWM_TIMER_CLOCK     20000000UL  // TIM1 clock frequency (20 MHz from SYSCLK)
+#define PWM_TIMER_CLOCK     80000000UL  // TIM1 clock frequency (80 MHz from SYSCLK)
 
 /* Private variables ---------------------------------------------------------*/
 static TIM_HandleTypeDef *htim_pwm = NULL;
@@ -46,7 +46,7 @@ static uint32_t PWM_Calculate_Pulse(uint8_t duty_cycle, uint32_t period)
     {
         duty_cycle = 100;
     }
-    return (period * duty_cycle) / 100;
+    return ((period + 1) * duty_cycle) / 100;
 }
 
 /**
@@ -144,7 +144,6 @@ PWM_StatusTypeDef HAL_PWM_Init(TIM_HandleTypeDef *htim)
     // Store timer handle - CubeMX already configured the timer
     htim_pwm = htim;
     pwm_is_running = 0;
-
     // Read current configuration from CubeMX settings
     uint32_t prescaler = htim_pwm->Init.Prescaler;
     uint32_t period = htim_pwm->Init.Period;

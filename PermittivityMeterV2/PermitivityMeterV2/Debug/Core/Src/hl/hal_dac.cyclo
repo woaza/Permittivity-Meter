@@ -1,0 +1,5 @@
+../Core/Src/hl/hal_dac.c:31:19:HL_DAC_Init	4
+../Core/Src/hl/hal_dac.c:60:19:HL_DAC_SetVoltage	4
+../Core/Src/hl/hal_dac.c:84:19:HL_DAC_SetRawValue	4
+../Core/Src/hl/hal_dac.c:109:19:HL_DAC_Start	3
+../Core/Src/hl/hal_dac.c:130:19:HL_DAC_Stop	3
