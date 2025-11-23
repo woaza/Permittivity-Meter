@@ -12,6 +12,7 @@ RM := rm -rf
 -include Drivers/STM32L4xx_HAL_Driver/Src/subdir.mk
 -include Core/Startup/subdir.mk
 -include Core/Src/test/subdir.mk
+-include Core/Src/mocks/subdir.mk
 -include Core/Src/hl/subdir.mk
 -include Core/Src/subdir.mk
 -include objects.mk
@@ -62,8 +63,8 @@ all: main-build
 main-build: PermitivityMeterV2.elf secondary-outputs
 
 # Tool invocations
-PermitivityMeterV2.elf PermitivityMeterV2.map: $(OBJS) $(USER_OBJS) C:\PermitivityMeter_local\V2\Permittivity-Meter\PermittivityMeterV2\PermitivityMeterV2\STM32L476RGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "PermitivityMeterV2.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\PermitivityMeter_local\V2\Permittivity-Meter\PermittivityMeterV2\PermitivityMeterV2\STM32L476RGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="PermitivityMeterV2.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+PermitivityMeterV2.elf PermitivityMeterV2.map: $(OBJS) $(USER_OBJS) C:\Users\Johannes\Documents\test1\Test3\Permittivity-Meter-dev\PermittivityMeterV2\PermitivityMeterV2\STM32L476RGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "PermitivityMeterV2.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Johannes\Documents\test1\Test3\Permittivity-Meter-dev\PermittivityMeterV2\PermitivityMeterV2\STM32L476RGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="PermitivityMeterV2.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
