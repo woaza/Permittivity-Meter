@@ -173,4 +173,15 @@ def main(argv: list[str] | None = None) -> int:
                                timeout=args.timeout,
                                scenario=args.scenario,
                                stage_timeout=args.stage_timeout,
-                               prompt_reset=not args.no_reset_p...
+                               prompt_reset=not args.no_reset_prompt,
+                               probe_debug=args.probe_debug,
+                               strict_result=args.strict_result)
+        print(f"Lifecycle SUCCESS: {result}")
+        return 0
+    except Exception as exc:
+        print(f"Lifecycle FAILURE: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

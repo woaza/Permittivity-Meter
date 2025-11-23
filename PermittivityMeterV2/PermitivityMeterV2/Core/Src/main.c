@@ -130,7 +130,7 @@ int main(void)
   while (1)
   {
     HAL_IWDG_Refresh(&hiwdg);
-    HAL_PWM_Pulse_Update();
+    //HAL_PWM_Pulse_Update();
     FSM_RunOnce();
     HAL_Delay(1);
 
