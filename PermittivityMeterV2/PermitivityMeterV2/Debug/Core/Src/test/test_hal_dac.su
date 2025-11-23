@@ -1,0 +1,2 @@
+../Core/Src/test/test_hal_dac.c:17:19:Test_HL_DAC_RunAll	24	static
+../Core/Src/test/test_hal_dac.c:90:6:Test_HL_DAC_GenerateWaveform	32	static
