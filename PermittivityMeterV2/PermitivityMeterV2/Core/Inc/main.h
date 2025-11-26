@@ -55,7 +55,11 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+extern ADC_HandleTypeDef hadc1;
+extern DAC_HandleTypeDef hdac1;
+extern UART_HandleTypeDef huart2;
+extern TIM_HandleTypeDef htim1;
+extern UART_HandleTypeDef huart4;
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

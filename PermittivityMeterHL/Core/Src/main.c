@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "fsm_main.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -98,11 +98,9 @@ int main(void)
   MX_DAC1_Init();
   MX_UART4_Init();
   /* USER CODE BEGIN 2 */
-
-  // MCO-Konfiguration: HSE als Quelle für MCO1 (PA8)
   HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
 
-
+  FSM_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -112,6 +110,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    FSM_RunOnce();
+    HAL_Delay(1);
   }
   /* USER CODE END 3 */
 }

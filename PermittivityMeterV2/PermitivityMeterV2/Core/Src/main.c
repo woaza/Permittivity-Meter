@@ -22,19 +22,11 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "hl/hal_pwm.h"
+#include "fsm_main.h"
 #include "hl/hal_dac.h"
+#include "hl/hal_adc.h"
 #include "test/test_hal_dac.h"
-
-
-
-
-
-
-
-
-
-
-
+#include "test/test_hal_adc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -65,6 +57,7 @@ IWDG_HandleTypeDef hiwdg;
 TIM_HandleTypeDef htim1;
 
 UART_HandleTypeDef huart4;
+UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
@@ -79,6 +72,7 @@ static void MX_UART4_Init(void);
 static void MX_DAC1_Init(void);
 static void MX_IWDG_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -123,48 +117,53 @@ int main(void)
   MX_DAC1_Init();
   MX_IWDG_Init();
   MX_TIM1_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  /* Drivers init function calls*/
-  if (HL_DAC_Init(&hdac1) != DAC_OK)
-  {
-    Error_Handler();
-  }
   
+
   // Turn on Init LED (PA6) to indicate successful init
   HAL_GPIO_WritePin(GPIOA, INIT_LED_Pin, GPIO_PIN_SET);
 
 
 
-  HL_DAC_Init(&hdac1);
+  //HL_DAC_Init(&hdac1);
+  //HL_ADC_Init(&hadc1);
+  
+
+
   // Set fixed voltages for testing
  
   //HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, 2.3333f);
   //HL_DAC_SetVoltage(DAC_CH_Q_FACTOR, 2.3333f);
 
-  Test_HL_DAC_GenerateWaveform(&hdac1, &hiwdg);
+  // Test_HL_DAC_GenerateWaveform(&hdac1, &hiwdg);
+  //Test_HL_ADC_Mock_Read(&hadc1, &hdac1);
 
 
 
 
 
-  /*
+
   HAL_PWM_Init(&htim1);
-  HAL_PWM_SetFrequency(1000000UL);
+  HAL_PWM_SetFrequency(2000000UL);
   HAL_PWM_SetDutyCycle(50);
   HAL_PWM_Start();
-  */
+
+
+  FSM_Init();
 
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  
   while (1)
   {
-	  HAL_IWDG_Refresh(&hiwdg);
-	  HAL_Delay(100);
+    HAL_IWDG_Refresh(&hiwdg);
+    //HAL_PWM_Pulse_Update();
+    FSM_RunOnce();
+    HAL_Delay(1);
 
     /* USER CODE END WHILE */
 
@@ -192,14 +191,13 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 2;
-  RCC_OscInitStruct.PLL.PLLN = 10;
+  RCC_OscInitStruct.PLL.PLLN = 16;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
   RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
   RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV4;
@@ -217,11 +215,11 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
     Error_Handler();
   }
-  HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_SYSCLK, RCC_MCODIV_1);
+  HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
 }
 
 /**
@@ -487,6 +485,41 @@ static void MX_UART4_Init(void)
   /* USER CODE BEGIN UART4_Init 2 */
 
   /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
 
 }
 

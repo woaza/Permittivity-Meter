@@ -5,12 +5,15 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../Core/Src/test/test_hal_adc.c \
 ../Core/Src/test/test_hal_dac.c 
 
 OBJS += \
+./Core/Src/test/test_hal_adc.o \
 ./Core/Src/test/test_hal_dac.o 
 
 C_DEPS += \
+./Core/Src/test/test_hal_adc.d \
 ./Core/Src/test/test_hal_dac.d 
 
 
@@ -21,7 +24,7 @@ Core/Src/test/%.o Core/Src/test/%.su Core/Src/test/%.cyclo: ../Core/Src/test/%.c
 clean: clean-Core-2f-Src-2f-test
 
 clean-Core-2f-Src-2f-test:
-	-$(RM) ./Core/Src/test/test_hal_dac.cyclo ./Core/Src/test/test_hal_dac.d ./Core/Src/test/test_hal_dac.o ./Core/Src/test/test_hal_dac.su
+	-$(RM) ./Core/Src/test/test_hal_adc.cyclo ./Core/Src/test/test_hal_adc.d ./Core/Src/test/test_hal_adc.o ./Core/Src/test/test_hal_adc.su ./Core/Src/test/test_hal_dac.cyclo ./Core/Src/test/test_hal_dac.d ./Core/Src/test/test_hal_dac.o ./Core/Src/test/test_hal_dac.su
 
 .PHONY: clean-Core-2f-Src-2f-test
 

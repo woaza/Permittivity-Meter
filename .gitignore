@@ -1,0 +1,63 @@
+# Track only the project sources we care about
+/*
+!.gitignore
+!.project
+!Dokumentation/
+!Flowchart.mmd
+!NINA\ software\ von\ okorn/
+!PermittivityMeterHL/
+!PermittivityMeterV2/
+!README.md
+!tests/
+!ToDos.md
+!tools/
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+*.code-workspace
+.vscode/
+.idea/
+.settings/
+.vs/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+ENV/
+.mypy_cache/
+.pytest_cache/
+
+# Generic build output
+build/
+Build/
+*/build/
+*/Build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.o
+*.obj
+*.d
+*.a
+*.lib
+*.out
+*.log
+*.tmp
+*.swp
+
+# STM32 / CubeIDE outputs
+**/Debug/
+**/Release/
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+*.launches
+*.mxproject
+*.stm32cubeide/

@@ -20,6 +20,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 static DAC_HandleTypeDef *hdac_local = NULL;
+static float last_voltages[2] = {0.0f, 0.0f}; // Store last set voltages for CH1 and CH2
 
 /* Exported functions --------------------------------------------------------*/
 
@@ -45,8 +46,8 @@ DAC_StatusTypeDef HL_DAC_Init(DAC_HandleTypeDef *hdac)
     }
 
     // Set initial values to 0
-    HL_DAC_SetRawValue(DAC_CH_FREQ_TUNE, 0);
-    HL_DAC_SetRawValue(DAC_CH_Q_FACTOR, 0);
+    HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, 0.0f);
+    HL_DAC_SetVoltage(DAC_CH_Q_FACTOR, 0.0f);
 
     return DAC_OK;
 }
@@ -71,6 +72,16 @@ DAC_StatusTypeDef HL_DAC_SetVoltage(DAC_ChannelTypeDef channel, float voltage)
 
     // Calculate raw value: (Voltage / Vref) * MaxValue
     uint32_t raw_value = (uint32_t)((voltage / DAC_VOLTAGE_REF) * DAC_MAX_VALUE);
+
+    // Update stored voltage
+    if (channel == DAC_CH_FREQ_TUNE)
+    {
+        last_voltages[0] = voltage;
+    }
+    else if (channel == DAC_CH_Q_FACTOR)
+    {
+        last_voltages[1] = voltage;
+    }
 
     return HL_DAC_SetRawValue(channel, raw_value);
 }
@@ -99,6 +110,24 @@ DAC_StatusTypeDef HL_DAC_SetRawValue(DAC_ChannelTypeDef channel, uint32_t raw_va
     }
 
     return DAC_OK;
+}
+
+/**
+ * @brief Get the last set voltage for a specific channel
+ * @param channel: DAC channel
+ * @retval float: Voltage in Volts
+ */
+float HL_DAC_GetVoltage(DAC_ChannelTypeDef channel)
+{
+    if (channel == DAC_CH_FREQ_TUNE)
+    {
+        return last_voltages[0];
+    }
+    else if (channel == DAC_CH_Q_FACTOR)
+    {
+        return last_voltages[1];
+    }
+    return 0.0f;
 }
 
 /**
@@ -142,3 +171,4 @@ DAC_StatusTypeDef HL_DAC_Stop(DAC_ChannelTypeDef channel)
 
     return DAC_OK;
 }
+

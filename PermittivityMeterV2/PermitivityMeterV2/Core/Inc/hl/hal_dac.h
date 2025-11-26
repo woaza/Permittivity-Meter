@@ -86,6 +86,13 @@ DAC_StatusTypeDef HL_DAC_Start(DAC_ChannelTypeDef channel);
  */
 DAC_StatusTypeDef HL_DAC_Stop(DAC_ChannelTypeDef channel);
 
+/**
+ * @brief Get the last set voltage for a specific channel
+ * @param channel: DAC channel
+ * @retval float: Voltage in Volts
+ */
+float HL_DAC_GetVoltage(DAC_ChannelTypeDef channel);
+
 #ifdef __cplusplus
 }
 #endif

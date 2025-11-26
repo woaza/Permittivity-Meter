@@ -20,7 +20,7 @@
 
 /* Private defines -----------------------------------------------------------*/
 #define PWM_CHANNEL         TIM_CHANNEL_2
-#define PWM_TIMER_CLOCK     80000000UL  // TIM1 clock frequency (80 MHz from SYSCLK)
+#define PWM_TIMER_CLOCK     40000000UL  // TIM1 clock frequency (80 MHz from SYSCLK)
 
 /* Private variables ---------------------------------------------------------*/
 static TIM_HandleTypeDef *htim_pwm = NULL;
@@ -178,6 +178,10 @@ PWM_StatusTypeDef HAL_PWM_Start(void)
     {
         return PWM_ERROR;
     }
+
+    // Explicitly enable Main Output Enable (MOE) bit for TIM1 (Advanced Timer)
+    // This is required for the outputs to be enabled on advanced timers
+    __HAL_TIM_MOE_ENABLE(htim_pwm);
 
     pwm_is_running = 1;
     return PWM_OK;
