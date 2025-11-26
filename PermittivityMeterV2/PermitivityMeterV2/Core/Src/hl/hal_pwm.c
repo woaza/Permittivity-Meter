@@ -179,10 +179,6 @@ PWM_StatusTypeDef HAL_PWM_Start(void)
         return PWM_ERROR;
     }
 
-    // Explicitly enable Main Output Enable (MOE) bit for TIM1 (Advanced Timer)
-    // This is required for the outputs to be enabled on advanced timers
-    __HAL_TIM_MOE_ENABLE(htim_pwm);
-
     pwm_is_running = 1;
     return PWM_OK;
 }

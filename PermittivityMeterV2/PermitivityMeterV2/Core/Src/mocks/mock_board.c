@@ -222,12 +222,6 @@ void MockBoard_DebugPush(const DebugLogEntry_t *entry)
     } else {
         ++s_debug_state.count;
     }
-    
-    // Output to console
-    printf("[%s] %s\n", 
-           (entry->domain == DEBUG_LOG_DOMAIN_STATE) ? "STATE" :
-           (entry->domain == DEBUG_LOG_DOMAIN_EVENT) ? "EVENT" : "DRV",
-           entry->text);
 }
 
 size_t MockBoard_DebugCopy(DebugLogEntry_t *out_entries, size_t max_entries)

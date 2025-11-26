@@ -24,9 +24,7 @@
 #include "hl/hal_pwm.h"
 #include "fsm_main.h"
 #include "hl/hal_dac.h"
-#include "hl/hal_adc.h"
 #include "test/test_hal_dac.h"
-#include "test/test_hal_adc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -120,25 +118,24 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  /* Drivers init function calls*/
+  if (HL_DAC_Init(&hdac1) != DAC_OK)
+  {
+    Error_Handler();
+  }
   
-
   // Turn on Init LED (PA6) to indicate successful init
   HAL_GPIO_WritePin(GPIOA, INIT_LED_Pin, GPIO_PIN_SET);
 
 
 
-  //HL_DAC_Init(&hdac1);
-  //HL_ADC_Init(&hadc1);
-  
-
-
+  HL_DAC_Init(&hdac1);
   // Set fixed voltages for testing
  
   //HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, 2.3333f);
   //HL_DAC_SetVoltage(DAC_CH_Q_FACTOR, 2.3333f);
 
-  // Test_HL_DAC_GenerateWaveform(&hdac1, &hiwdg);
-  //Test_HL_ADC_Mock_Read(&hadc1, &hdac1);
+  Test_HL_DAC_GenerateWaveform(&hdac1, &hiwdg);
 
 
 
@@ -146,7 +143,7 @@ int main(void)
 
 
   HAL_PWM_Init(&htim1);
-  HAL_PWM_SetFrequency(2000000UL);
+  HAL_PWM_SetFrequency(20000000UL);
   HAL_PWM_SetDutyCycle(50);
   HAL_PWM_Start();
 

@@ -1,6 +1,5 @@
-../Core/Src/hl/hal_dac.c:32:19:HL_DAC_Init	16	static
-../Core/Src/hl/hal_dac.c:61:19:HL_DAC_SetVoltage	24	static
-../Core/Src/hl/hal_dac.c:95:19:HL_DAC_SetRawValue	16	static
-../Core/Src/hl/hal_dac.c:120:7:HL_DAC_GetVoltage	16	static
-../Core/Src/hl/hal_dac.c:138:19:HL_DAC_Start	16	static
-../Core/Src/hl/hal_dac.c:159:19:HL_DAC_Stop	16	static
+../Core/Src/hl/hal_dac.c:31:19:HL_DAC_Init	16	static
+../Core/Src/hl/hal_dac.c:60:19:HL_DAC_SetVoltage	24	static
+../Core/Src/hl/hal_dac.c:84:19:HL_DAC_SetRawValue	16	static
+../Core/Src/hl/hal_dac.c:109:19:HL_DAC_Start	16	static
+../Core/Src/hl/hal_dac.c:130:19:HL_DAC_Stop	16	static
