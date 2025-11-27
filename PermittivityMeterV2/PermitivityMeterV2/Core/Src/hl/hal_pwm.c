@@ -20,7 +20,7 @@
 
 /* Private defines -----------------------------------------------------------*/
 #define PWM_CHANNEL         TIM_CHANNEL_2
-#define PWM_TIMER_CLOCK     40000000UL  // TIM1 clock frequency (80 MHz from SYSCLK)
+#define PWM_TIMER_CLOCK     80000000UL  // TIM1 clock frequency (80 MHz from SYSCLK)
 
 /* Private variables ---------------------------------------------------------*/
 static TIM_HandleTypeDef *htim_pwm = NULL;
