@@ -22,7 +22,7 @@ flowchart LR
     direction TB
     
     subgraph OUTPUTS["Digital Outputs"]
-      MCO["<b>PA8: MCO1</b><br/>20 MHz Clock<br/>3.3Vpp Square Wave<br/>50% Duty Cycle"]
+      PWM["<b>PA9: PWM TIM1_CH1</b><br/>20 MHz Clock<br/>3.3Vpp Square Wave<br/>50% Duty Cycle"]
       GPIO["<b>PC1/PC2: GPIO</b><br/>Gain Control<br/>1x / 10x / 100x"]
       UART_BT["<b>PA2/PA3: USART2</b><br/>115200 baud<br/>Bluetooth Commands"]
     end
@@ -53,7 +53,7 @@ flowchart LR
 
   BT["<b>NINA-W10</b><br/>Bluetooth Module<br/>BLE Mode<br/>Wireless Output<br/>Data: ε' / ε''"]
 
-  MCO -.->|"20 MHz Digital"| FILTER
+  PWM -.->|"20 MHz Digital"| FILTER
   FILTER ==>|"0.5-1Vpp Sine"| PREAMP
   PREAMP ==>|"1-2Vpp Sine"| NOTCH
   NOTCH ==>|"Attenuated mVpp"| TWOSTAGE
@@ -80,7 +80,7 @@ flowchart LR
   style TWOSTAGE fill:#e8f8f5,stroke:#16a085,stroke-width:2px
   style POSTAMP fill:#e8f8f5,stroke:#16a085,stroke-width:2px
   
-  style MCO fill:#dfe6e9,stroke:#2d3436,stroke-width:2px
+  style PWM fill:#dfe6e9,stroke:#2d3436,stroke-width:2px
   style GPIO fill:#dfe6e9,stroke:#2d3436,stroke-width:2px
   style UART_BT fill:#dfe6e9,stroke:#2d3436,stroke-width:2px
   style DAC fill:#d5f4e6,stroke:#00b894,stroke-width:2px
