@@ -2,6 +2,20 @@
 **ECE.23.D** | **Version 1.1** | **05-Nov-2025**
 
 ---
+## Todos vom meetig am 27.11. Messalgorithmus und mc
+
+Algorithmus:
+Die untere varicap soll mit eingestellt werden bis ein minimum gefunden wird, die variacap braucht einfach eine gleichspannung angelegt und dann soll am ausgang mit unserem adc das signal gelesen werden.
+Die oberen auf irgendwas lassen und zuerst die untere (D1 (p zu c20)) einstellen. Die Untere muss so eingestellt werden dass die richtige frequenz im spektrum für das minimum erreicht wurde. Danach kann man dann mit der anderen Varicap das minimum verbessern.
+
+Sonstiges: 
+Der GPIO Pin am µC wird wahrscheinlich nicht den 50Ohm eingang von der Schaltung mit dem rechtecksignal treiben können. Deswegen werden wir einen OPV nach dem GPIO Pin schalten müssen, dann können wir auch die verstärkung einstellen falls wir das brauchen.
+
+
+
+
+
+
 ## Deadline 07.11.2025
 - [O] choosing an External Crystal
 
