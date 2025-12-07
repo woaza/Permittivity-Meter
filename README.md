@@ -39,19 +39,68 @@ The firmware operates based on a Finite State Machine (FSM) defined in `fsm_main
 
 ## Hardware Configuration
 
-The system is configured for the **STM32L476RG** MCU with the following peripherals:
+### Pinout Configuration
 
-*   **ADC1 (Channel 1)**: Measures the RF amplitude signal. Configured for Single-ended mode with DMA.
-*   **DAC1 (Channel 1 & 2)**:
-    *   **Channel 1**: Controls the Frequency Tuning Varicap voltage.
-    *   **Channel 2**: Controls the Q-Factor Varicap voltage.
-*   **UART4**: Communicates with the **NINA-B1** Bluetooth/WiFi module (115200 baud, RTS/CTS flow control).
-*   **USART2**: USB CDC Bridge for PC communication and debugging (115200 baud).
-*   **TIM1**: Generates the PWM excitation signal for the RF circuit.
-*   **GPIOs**:
-    *   **LEDs**: PA5 (Init), PA6 (Meas), PC7 (Excite), PB6 (Error).
-    *   **Control**: PC0 (OpAmp Disable), PC1 (Excite Enable), PC2/PC3 (Gain Select).
-    *   **Button**: PC13 (User Button).
+| Pin | Name | Function | Description |
+| :--- | :--- | :--- | :--- |
+| **PC13** | `B1` | **User Button** | Triggers Calibration (if needed) or Measurement. |
+| **PA6** | `INIT_LED` | **LED (Green)** | Indicates System Initialization / Idle State. |
+| **PA7** | `MEAS_LED` | **LED (Blue)** | Indicates Measurement/Calibration in progress. |
+| **PC7** | `EXCITE_LED` | **LED (Yellow)** | Indicates RF Excitation is Active. |
+| **PB6** | `ERR_LED` | **LED (Red)** | Indicates Error State. |
+| **PA4** | `FRQ_TN` | **DAC1 Ch1** | Frequency Tuning Varicap Voltage. |
+| **PA5** | `Q_FACT_TN` | **DAC1 Ch2** | Q-Factor Tuning Varicap Voltage. |
+| **PA9** | `SQR_20M_OUT` | **TIM1 CH2** | 20 MHz PWM Excitation Signal. |
+| **PA1** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
+| **PA0** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
+| **PA2** | `VCP_TX` | **USART2 TX** | USB Virtual COM Port TX. |
+| **PA3** | `VCP_RX` | **USART2 RX** | USB Virtual COM Port RX. |
+| **PC8** | `GAIN_SLCT_1` | **GPIO Out** | RF Gain Select Bit 0. |
+| **PC9** | `GAIN_SLCT_2` | **GPIO Out** | RF Gain Select Bit 1. |
+
+### User Interface (UI) Behavior
+
+The device operates autonomously using the onboard Button, LEDs, and LCD.
+
+#### Button Logic (PC13)
+*   **1st Press**: Triggers **Calibration** (if no valid calibration exists).
+*   **2nd Press**: Triggers **Measurement** (if calibration is valid).
+*   **Press in Error State**: Resets the system to Init.
+
+#### LED & LCD Status Indicators
+
+| State | LCD Text | LEDs Active | Description |
+| :--- | :--- | :--- | :--- |
+| **INIT** | `INIT / Booting...` | **Init (Green)** | System startup and hardware check. |
+| **IDLE** | `IDLE / Ready` | **Init (Green)** | Waiting for user input. |
+| **CALIBRATION** | `CAL / Sweeping...` | **Meas (Blue)**, **Excite (Yellow)** | Performing frequency sweep for "Air" reference. |
+| **MEASURE** | `MEAS / Sampling...` | **Meas (Blue)**, **Excite (Yellow)** | Performing frequency sweep for "Snow" sample. |
+| **RESULT** | `RESULT / Sending...` | **Meas (Blue)** | Calculation complete. **TODO**: Show value on LCD. |
+| **ERROR** | `ERROR / Check host` | **Error (Red)** | Hardware failure or timeout. |
+
+### Signal Processing Strategy (Undersampling & Fourier Analysis)
+
+The RF excitation frequency is **20 MHz**, which is significantly higher than the Nyquist frequency of the STM32L4's ADC (max sampling rate ~5 Msps). To accurately measure the amplitude of this high-frequency signal without expensive high-speed ADCs, we employ **Undersampling (Bandpass Sampling)**.
+
+1.  **Concept**: By sampling at a frequency $f_s$ that is **not** a whole integer fraction of the signal frequency $f_{sig}$ (20 MHz), the high-frequency signal aliases down to a lower baseband frequency $f_{alias}$.
+    *   Formula: $f_{alias} = | f_{sig} - N \cdot f_s |$
+    *   **Requirement**: We target an alias frequency in the **low kHz range** (e.g., 10-50 kHz). This requires precise configuration of the ADC trigger timer. We must **avoid** sampling at exactly $20 \text{ MHz} / N$, as this would alias to DC (0 Hz) and lose phase/amplitude information due to 1/f noise and drift.
+
+2.  **Implementation**:
+    *   **ADC**: Captures a buffer of samples (e.g., 256 or 512 points) via DMA.
+    *   **Processing**: We perform a **Discrete Fourier Transform (DFT)** or **FFT** on the captured buffer.
+    *   **Extraction**: We look for the magnitude of the spectral peak at the expected $f_{alias}$. This magnitude corresponds to the amplitude of the 20 MHz RF signal.
+    *   **Advantage**: This method acts as a narrowband filter, rejecting noise and DC offsets effectively.
+
+### PC Control & Debugging
+
+The system is designed to be controllable from both the **NINA-B1 Bluetooth module** and a **PC via USB**.
+
+*   **Mirroring**: The firmware mirrors all traffic between the internal logic and the external interfaces.
+    *   Commands received from **UART4 (Bluetooth)** are processed, and responses are sent back to UART4.
+    *   Commands received from **USART2 (USB CDC)** are processed identically.
+    *   **Output Mirroring**: Any status message (`DAT:RES`, `LOG:...`) sent by the firmware is broadcast to **both** UART4 and USART2.
+*   **PC Tools**: The `tools/pc_cli.py` script acts as a host controller. It connects to the STM32's USB COM port and sends the same ASCII commands (`CMD:MEAS`, `CMD:CAL`) that the Bluetooth mobile app would send. This allows for full hardware lifecycle testing and debugging without needing the mobile app or wireless connection.
 
 ## Missing Functionality / To-Do
 
@@ -63,6 +112,32 @@ To achieve full functionality, the following areas need attention:
 4.  **Watchdog Management**: While the watchdog is refreshed in the main loop, long-running operations within FSM states (if any) should ensure they do not trigger a reset.
 
 ## Layout Overview
+
+### File Purpose & Hardware Interaction
+
+This section clarifies where specific logic lives, distinguishing between high-level application logic (Mock/Real agnostic) and low-level hardware drivers.
+
+| File Path | Purpose | Hardware vs. Mock |
+| :--- | :--- | :--- |
+| **`Core/Src/fsm_main.c`** | **The Brain**. Controls the high-level state (Idle, Calibrate, Measure). | **Pure Logic**. Does not touch hardware directly. Calls `rf_measure.c` and `bt_manager.c`. |
+| **`Core/Src/rf_measure.c`** | **The Scientist**. Implements the sweep algorithms (Coarse/Fine) to find resonance. | **Logic**. Calls `bsp_rf.c` to set voltages and read values. Agnostic to *how* those values are set/read. |
+| **`Core/Src/bsp_rf.c`** | **The Bridge**. The Board Support Package (BSP) for the RF frontend. | **The Switch Point**. Currently contains **MOCK** code (logging only). **TODO**: Must be updated to call `HL_DAC` and `HL_ADC` for real hardware. |
+| **`Core/Src/hl/hal_*.c`** | **The Drivers**. Wrappers around STM32 HAL for DAC, ADC, PWM. | **Real Hardware**. These files directly manipulate the STM32 registers/HAL. |
+| **`Core/Src/bt_manager.c`** | **The Communicator**. Handles ASCII protocol (`CMD:`, `DAT:`) for Bluetooth & PC. | **Real Hardware**. Writes to UART4 (BT) and calls `usb_cdc_bridge.c` (PC). |
+| **`Core/Src/main.c`** | **The Setup**. Initializes the MCU, clocks, and peripherals. | **Real Hardware**. Configures the physical chip. Contains the main `while(1)` loop. |
+
+### Acronym Lookup Table
+
+| Acronym | Full Name | Meaning in this Project |
+| :--- | :--- | :--- |
+| **FSM** | Finite State Machine | The main control loop structure (Idle -> Cal -> Meas). |
+| **BSP** | Board Support Package | The layer that abstracts the specific hardware pins/drivers from the logic. |
+| **HAL** | Hardware Abstraction Layer | ST's low-level driver library (or our wrappers around it). |
+| **DAC** | Digital-to-Analog Converter | Generates voltage to tune the Varicaps (change frequency). |
+| **ADC** | Analog-to-Digital Converter | Reads the voltage amplitude of the RF signal. |
+| **PWM** | Pulse Width Modulation | Generates the 20MHz square wave to excite the circuit. |
+| **CDC** | Communications Device Class | The USB protocol used to create a virtual COM port on the PC. |
+| **DFT/FFT** | Discrete Fourier Transform | Math used to extract the signal amplitude from undersampled data. |
 
 - `PermittivityMeterV2/PermitivityMeterV2/Core/Inc`, `PermittivityMeterV2/PermitivityMeterV2/Core/Src`
 	- Shared firmware logic (FSM, RF math/model, BSP shims, UART bridge, mocks)
