@@ -21,8 +21,8 @@ stateDiagram-v2
     [*] --> STATE_INIT
     STATE_INIT --> STATE_IDLE : Init Done
     
-    STATE_IDLE --> STATE_CALIBRATION : CMD:CAL or Button (1st)
-    STATE_IDLE --> STATE_MEASURE_SEARCH : CMD:MEAS or Button (2nd)
+    STATE_IDLE --> STATE_CALIBRATION : CMD_CAL or Button (1st)
+    STATE_IDLE --> STATE_MEASURE_SEARCH : CMD_MEAS or Button (2nd)
     
     state STATE_CALIBRATION {
         [*] --> CoarseSweep
@@ -90,19 +90,23 @@ The project follows a layered architecture to ensure testability and separation 
 
 ```mermaid
 graph TD
-    subgraph "Application Layer"
+    subgraph "Application Layer (Pure Logic)"
         FSM[fsm_main.c]
         Math[math_model.c]
         Meas[rf_measure.c]
     end
     
-    subgraph "BSP Layer (Bridge)"
+    subgraph "BSP Layer (The Switch Point)"
         BSP_RF[bsp_rf.c]
         BSP_UI[bsp_ui.c]
         BSP_BT[bt_manager.c]
     end
     
-    subgraph "HAL Layer (Drivers)"
+    subgraph "Mock Layer (Simulation)"
+        MockBoard[mocks/mock_board.c]
+    end
+
+    subgraph "HAL Layer (Real Hardware)"
         HAL_DAC[hl/hal_dac.c]
         HAL_ADC[hl/hal_adc.c]
         HAL_PWM[hl/hal_pwm.c]
@@ -110,8 +114,12 @@ graph TD
     
     FSM --> Meas
     Meas --> BSP_RF
-    BSP_RF --> HAL_DAC
-    BSP_RF --> HAL_ADC
+    
+    %% The Switch Point: Currently connected to Mock, needs to switch to HAL
+    BSP_RF -.->|Current: Mock Mode| MockBoard
+    BSP_RF -.->|TODO: Real Mode| HAL_DAC
+    BSP_RF -.->|TODO: Real Mode| HAL_ADC
+    
     FSM --> BSP_UI
 ```
 
