@@ -24,6 +24,16 @@
   - [ ] **Step 1 (Coarse)**: Set the lower varicap (D1) to a fixed voltage. Sweep the upper varicap to find the rough frequency range.
   - [ ] **Step 2 (Fine)**: Adjust the lower varicap to fine-tune the minimum.
   - [ ] **Input**: Read the signal via ADC.
+- [ ] **Calibration Routine** (Reference in Air):
+  - [ ] Tune D1 and D2 to find minimum at 20MHz in air.
+  - [ ] Store reference voltage `V_Ref` (U_D1 at calibration).
+- [ ] **Measurement Routine** (Sample Medium):
+  - [ ] Tune D1 to bring minimum back to 20MHz in sample.
+  - [ ] Store measurement voltage `V_M`.
+- [ ] **Permittivity Calculation** (Denoth's Formula):
+  - [ ] Implement: `ε' = 1 + k_D × log(V_M / V_Ref)`
+  - [ ] Constant `k_D = 0.5963` (from BB353 varactor).
+  - [ ] Implement imaginary part: `ε'' = 1 / (ω × Rp × C0)`
 - [ ] **Driver Verification**: (Done)
   - [x] ADC (122.5kHz)
   - [x] PWM (20MHz)
