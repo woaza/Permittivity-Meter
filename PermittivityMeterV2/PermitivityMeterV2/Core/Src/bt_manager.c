@@ -9,7 +9,7 @@
 #include "bsp_lcd.h"
 #include "bsp_ui.h"
 #include "debug_log.h"
-#include "mocks/mock_board.h"
+#include "drv/driver_board.h"
 #include "rf_trace.h"
 #include "usb_cdc_bridge.h"
 
@@ -20,7 +20,7 @@ static void output_line(const char *line)
     if (line == NULL) {
         return;
     }
-    MockBoard_BT_SetLastTx(line);
+    Driver_BT_SetLastTx(line);
     PC_HostBridge_Send(line);
     Debug_LogDriver("BT_TX", line);
 }
@@ -201,7 +201,7 @@ static bool handle_mock_command(const char *buffer)
 
 void BT_Manager_Init(void)
 {
-    MockBoard_Init();
+    Driver_Init();
     PC_HostBridge_Init();
     s_pending_event = BT_EVENT_NONE;
     Debug_LogDriver("BT", "init");
@@ -267,12 +267,12 @@ void BT_SendResult(MeasurementResult_t result)
 
 void BT_MockEnqueueCommand(const char *cmd)
 {
-    MockBoard_BT_QueueCommand(cmd);
+    Driver_BT_QueueCommand(cmd);
 }
 
 void BT_MockPump(void)
 {
-    const char *cmd = MockBoard_BT_DequeueCommand();
+    const char *cmd = Driver_BT_DequeueCommand();
     if (cmd != NULL) {
         BT_ProcessIncoming(cmd);
     }
@@ -280,5 +280,6 @@ void BT_MockPump(void)
 
 const char *BT_MockGetLastTx(void)
 {
-    return MockBoard_BT_GetLastTx();
+    return Driver_BT_GetLastTx();
 }
+

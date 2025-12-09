@@ -75,11 +75,7 @@ extern "C"
 	 */
 	bool HL_ADC_IsBufferReady(void);
 
-	/**
-	 * @brief Clear the buffer ready flag (call after processing)
-	 * @retval None
-	 */
-	void HL_ADC_ClearBufferReady(void);
+
 
 	#ifdef __cplusplus
 }

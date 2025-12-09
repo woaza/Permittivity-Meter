@@ -7,16 +7,19 @@
 C_SRCS += \
 ../Core/Src/hl/hal_adc.c \
 ../Core/Src/hl/hal_dac.c \
+../Core/Src/hl/hal_gpio.c \
 ../Core/Src/hl/hal_pwm.c 
 
 OBJS += \
 ./Core/Src/hl/hal_adc.o \
 ./Core/Src/hl/hal_dac.o \
+./Core/Src/hl/hal_gpio.o \
 ./Core/Src/hl/hal_pwm.o 
 
 C_DEPS += \
 ./Core/Src/hl/hal_adc.d \
 ./Core/Src/hl/hal_dac.d \
+./Core/Src/hl/hal_gpio.d \
 ./Core/Src/hl/hal_pwm.d 
 
 
@@ -27,7 +30,7 @@ Core/Src/hl/%.o Core/Src/hl/%.su Core/Src/hl/%.cyclo: ../Core/Src/hl/%.c Core/Sr
 clean: clean-Core-2f-Src-2f-hl
 
 clean-Core-2f-Src-2f-hl:
-	-$(RM) ./Core/Src/hl/hal_adc.cyclo ./Core/Src/hl/hal_adc.d ./Core/Src/hl/hal_adc.o ./Core/Src/hl/hal_adc.su ./Core/Src/hl/hal_dac.cyclo ./Core/Src/hl/hal_dac.d ./Core/Src/hl/hal_dac.o ./Core/Src/hl/hal_dac.su ./Core/Src/hl/hal_pwm.cyclo ./Core/Src/hl/hal_pwm.d ./Core/Src/hl/hal_pwm.o ./Core/Src/hl/hal_pwm.su
+	-$(RM) ./Core/Src/hl/hal_adc.cyclo ./Core/Src/hl/hal_adc.d ./Core/Src/hl/hal_adc.o ./Core/Src/hl/hal_adc.su ./Core/Src/hl/hal_dac.cyclo ./Core/Src/hl/hal_dac.d ./Core/Src/hl/hal_dac.o ./Core/Src/hl/hal_dac.su ./Core/Src/hl/hal_gpio.cyclo ./Core/Src/hl/hal_gpio.d ./Core/Src/hl/hal_gpio.o ./Core/Src/hl/hal_gpio.su ./Core/Src/hl/hal_pwm.cyclo ./Core/Src/hl/hal_pwm.d ./Core/Src/hl/hal_pwm.o ./Core/Src/hl/hal_pwm.su
 
 .PHONY: clean-Core-2f-Src-2f-hl
 

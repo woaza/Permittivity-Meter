@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "mocks/mock_board.h"
+#include "drv/driver_board.h"
 
 #ifndef DEBUG_LOG_DEFAULT_TAG
 #define DEBUG_LOG_DEFAULT_TAG "STATE"
@@ -43,7 +43,7 @@ static void push_entry(DebugLogDomain_t domain, AppState_t state, const char *te
     strncpy(entry.text, text, sizeof(entry.text) - 1U);
     entry.text[sizeof(entry.text) - 1U] = '\0';
 
-    MockBoard_DebugPush(&entry);
+    Driver_DebugPush(&entry);
 }
 
 void Debug_LogState(const char *tag, AppState_t from_state, AppState_t to_state)
@@ -86,17 +86,18 @@ void Debug_LogDriver(const char *component, const char *detail)
 
 size_t Debug_LogCopy(DebugLogEntry_t *out_entries, size_t max_entries)
 {
-    return MockBoard_DebugCopy(out_entries, max_entries);
+    return Driver_DebugCopy(out_entries, max_entries);
 }
 
 const char *Debug_LogGetLast(void)
 {
-    const DebugLogEntry_t *entry = MockBoard_DebugGetLast();
+    const DebugLogEntry_t *entry = Driver_DebugGetLast();
     return (entry != NULL) ? entry->text : NULL;
 }
 
 void Debug_LogClear(void)
 {
     s_last_state = STATE_INIT;
-    MockBoard_DebugClear();
+    Driver_DebugClear();
 }
+

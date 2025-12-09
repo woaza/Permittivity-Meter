@@ -25,7 +25,7 @@ static ADC_HandleTypeDef *hadc_local = NULL;
 static TIM_HandleTypeDef *htim_trigger = NULL;
 
 static uint16_t dma_buffer[ADC_DMA_BUFFER_SIZE];
-static uint16_t *ready_buffer_ptr = NULL;
+static volatile uint16_t *volatile ready_buffer_ptr = NULL;
 static volatile bool buffer_ready_flag = false;
 
 /* Exported functions --------------------------------------------------------*/
@@ -129,7 +129,8 @@ uint16_t* HL_ADC_GetBuffer(void)
 {
     if (buffer_ready_flag)
     {
-        return ready_buffer_ptr;
+        buffer_ready_flag = false; // Consume-on-read
+        return (uint16_t*)ready_buffer_ptr;
     }
     return NULL;
 }
@@ -143,14 +144,7 @@ bool HL_ADC_IsBufferReady(void)
     return buffer_ready_flag;
 }
 
-/**
- * @brief Clear the buffer ready flag (call after processing)
- * @retval None
- */
-void HL_ADC_ClearBufferReady(void)
-{
-    buffer_ready_flag = false;
-}
+
 
 /* Callbacks -----------------------------------------------------------------*/
 
