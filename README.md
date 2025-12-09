@@ -256,3 +256,20 @@ The mock generates a **parabolic dip (minimum)** to simulate the resonance circu
 *   **Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing. The CLI relies on the FSM to drive these.
 
 
+### latest Todos
+
+Umbauen auf real mode (siehe 3. Software architecture)
+und dann testen mit frequenzgenerator, im prinzip alles
+
+Handyapp und bluetooth funktion wird nicht implementiert, es wird nur das UART protokoll für die Messdaten implementiert, wenn die nächste gruppe dann weiter macht brauchen die nurnoch die app draufsetzen.
+
+Die Commandhandler für input/output sollen noch implementiert werden (Buttons ADC LED usw.) hal gpio und die todos 
+
+
+
+Roman:
+Plakat machen
+OPV oder Pegelwandler dimensionieren 1V für benni
+Buck converter für 1v pegelwandler (vllt) Dimensionieren 
+Boost converter für 33v umdimensionieren
+Dimensionierungen für meine Bauteile dokumentieren (Matlab)
