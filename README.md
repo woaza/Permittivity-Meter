@@ -46,12 +46,12 @@ stateDiagram-v2
     STATE_ERROR --> STATE_INIT : Button Press
 ```
 
-1.  **STATE_INIT**: Initializes hardware (RF, UI, LCD, BT).
-2.  **STATE_IDLE**: Waits for user input (Button) or remote commands (Bluetooth/PC).
-3.  **STATE_CALIBRATION**: Sweeps the RF circuit with "Air" to find the baseline resonance.
-4.  **STATE_MEASURE_SEARCH**: Sweeps with the material to find the shifted resonance.
-5.  **STATE_CALCULATION**: Computes $\epsilon'$ and $\epsilon''$ using the frequency shift and Q-factor change.
-6.  **STATE_ERROR**: Handles hardware faults or timeouts.
+1. **STATE_INIT**: Initializes hardware (RF, UI, LCD, BT).
+2. **STATE_IDLE**: Waits for user input (Button) or remote commands (Bluetooth/PC).
+3. **STATE_CALIBRATION**: Sweeps the RF circuit with "Air" to find the baseline resonance.
+4. **STATE_MEASURE_SEARCH**: Sweeps with the material to find the shifted resonance.
+5. **STATE_CALCULATION**: Computes $\epsilon'$ and $\epsilon''$ using the frequency shift and Q-factor change.
+6. **STATE_ERROR**: Handles hardware faults or timeouts.
 
 ---
 
@@ -79,8 +79,9 @@ stateDiagram-v2
 | **PB9** | `I2C1_SDA` | **I2C SDA** | LCD Display Data. |
 
 ### Electronics Notes
-*   **PWM Output**: The GPIO (PA9) outputs 3.3V, but the RF circuit requires a **1V peak**. An **OpAmp buffer** with attenuation is required between the MCU and the circuit.
-*   **Varicap Control**: The DAC outputs (PA4, PA5) control the Varicaps. Channel 1 tunes the frequency (D1), and Channel 2 tunes the Q-factor.
+
+* **PWM Output**: The GPIO (PA9) outputs 3.3V, but the RF circuit requires a **1V peak**. An **OpAmp buffer** with attenuation is required between the MCU and the circuit.
+* **Varicap Control**: The DAC outputs (PA4, PA5) control the Varicaps. Channel 1 tunes the frequency (D1), and Channel 2 tunes the Q-factor.
 
 ---
 
@@ -137,9 +138,9 @@ graph TD
 
 The RF signal is **20 MHz**, which exceeds the Nyquist limit of the STM32 ADC (~5 Msps). We use **Undersampling (Bandpass Sampling)**:
 
-1.  **Sampling Rate ($f_s$)**: Configured (via TIM6) such that $|20\text{MHz} - N \cdot f_s| \approx 10\text{-}50\text{kHz}$.
-2.  **Capture**: DMA fills a buffer (e.g., 256 samples).
-3.  **Processing**: A **DFT/FFT** extracts the magnitude of the alias frequency. This acts as a narrowband filter.
+1. **Sampling Rate ($f_s$)**: Configured (via TIM6) such that $|20\text{MHz} - N \cdot f_s| \approx 10\text{-}50\text{kHz}$.
+2. **Capture**: DMA fills a buffer (e.g., 256 samples).
+3. **Processing**: A **DFT/FFT** extracts the magnitude of the alias frequency. This acts as a narrowband filter.
 
 ---
 
@@ -148,9 +149,10 @@ The RF signal is **20 MHz**, which exceeds the Nyquist limit of the STM32 ADC (~
 The device operates autonomously using the onboard Button, LEDs, and LCD.
 
 ### Button Logic (PC13)
-*   **1st Press**: Triggers **Calibration** (if no valid calibration exists).
-*   **2nd Press**: Triggers **Measurement** (if calibration is valid).
-*   **Press in Error State**: Resets the system to Init.
+
+* **1st Press**: Triggers **Calibration** (if no valid calibration exists).
+* **2nd Press**: Triggers **Measurement** (if calibration is valid).
+* **Press in Error State**: Resets the system to Init.
 
 ### LED & LCD Status
 
@@ -168,36 +170,41 @@ The device operates autonomously using the onboard Button, LEDs, and LCD.
 ## 5. Development Roadmap (To-Dos)
 
 ### A. Transition from Mock to Real Hardware (Priority: High)
-*   **Context**: `bsp_rf.c` is currently a mock that logs to UART but doesn't touch pins.
-*   **Tasks**:
-    1.  [ ] **Enable Drivers**: In `bsp_rf.c`, replace `Debug_LogDriver` with:
-        *   `HL_DAC_SetVoltage(DAC_CH_FREQ, v)`
-        *   `HL_DAC_SetVoltage(DAC_CH_Q, v)`
-    2.  [ ] **Clean Main Loop**: Remove the manual waveform generation code in `main.c`'s `while(1)` loop. It conflicts with the FSM.
-    3.  [ ] **Verify Timing**: Add `HAL_Delay(1)` in `rf_measure.c`'s `sample_at()` to allow Varicap voltage to settle.
+
+* **Context**: `bsp_rf.c` is currently a mock that logs to UART but doesn't touch pins.
+* **Tasks**:
+    1. [ ] **Enable Drivers**: In `bsp_rf.c`, replace `Debug_LogDriver` with:
+        * `HL_DAC_SetVoltage(DAC_CH_FREQ, v)`
+        * `HL_DAC_SetVoltage(DAC_CH_Q, v)`
+    2. [ ] **Clean Main Loop**: Remove the manual waveform generation code in `main.c`'s `while(1)` loop. It conflicts with the FSM.
+    3. [ ] **Verify Timing**: Add `HAL_Delay(1)` in `rf_measure.c`'s `sample_at()` to allow Varicap voltage to settle.
 
 ### B. Signal Processing Implementation
-*   **Context**: We need to measure 20MHz using a slower ADC via undersampling.
-*   **Tasks**:
-    1.  [ ] **ADC Timer**: Configure `main.c` / `hal_adc.c` (TIM6) to a specific frequency $f_s$ (e.g., ~800.1 kHz) to alias 20MHz to ~2.5kHz.
-    2.  [ ] **Buffer Capture**: Implement `BSP_RF_CaptureBuffer(float* buffer, size_t len)` in `bsp_rf.c` using DMA.
-    3.  [ ] **DFT Logic**: Implement a simple DFT/Goertzel in `math_model.c` to calculate magnitude at the alias frequency.
-    4.  [ ] **Update Measure**: Modify `rf_measure.c` to use the buffer+DFT method instead of single-point sampling.
+
+* **Context**: We need to measure 20MHz using a slower ADC via undersampling.
+* **Tasks**:
+    1. [ ] **ADC Timer**: Configure `main.c` / `hal_adc.c` (TIM6) to a specific frequency $f_s$ (e.g., ~800.1 kHz) to alias 20MHz to ~2.5kHz.
+    2. [ ] **Buffer Capture**: Implement `BSP_RF_CaptureBuffer(float* buffer, size_t len)` in `bsp_rf.c` using DMA.
+    3. [ ] **DFT Logic**: Implement a simple DFT/Goertzel in `math_model.c` to calculate magnitude at the alias frequency.
+    4. [ ] **Update Measure**: Modify `rf_measure.c` to use the buffer+DFT method instead of single-point sampling.
 
 ### C. User Interface Enhancements
-*   **Context**: The LCD currently only shows status strings, not results.
-*   **Tasks**:
-    1.  [ ] **Display Result**: Update `FSM_HandleCalculation` to format the result (e.g., `E: 1.54 D: 0.32`) and display it on the LCD.
+
+* **Context**: The LCD currently only shows status strings, not results.
+* **Tasks**:
+    1. [ ] **Display Result**: Update `FSM_HandleCalculation` to format the result (e.g., `E: 1.54 D: 0.32`) and display it on the LCD.
 
 ### D. PC Control & Mirroring
-*   **Context**: The PC CLI (`tools/pc_cli.py`) should control the device exactly like the Bluetooth app.
-*   **Tasks**:
-    1.  [ ] **Verify Mirroring**: Ensure `bt_manager.c` sends all outputs to both UART4 (BT) and USART2 (USB).
-    2.  [ ] **USB Input**: Ensure `usci_a_uart.c` forwards USB CDC data to the command parser.
+
+* **Context**: The PC CLI (`tools/pc_cli.py`) should control the device exactly like the Bluetooth app.
+* **Tasks**:
+    1. [ ] **Verify Mirroring**: Ensure `bt_manager.c` sends all outputs to both UART4 (BT) and USART2 (USB).
+    2. [ ] **USB Input**: Ensure `usci_a_uart.c` forwards USB CDC data to the command parser.
 
 ### E. Hardware / Electronics
-*   [ ] **PWM Level**: Add OpAmp buffer/divider to PA9 to attenuate 3.3V PWM to 1V peak.
-*   [ ] **Power**: Design for -40°C operation and battery support.
+
+* [ ] **PWM Level**: Add OpAmp buffer/divider to PA9 to attenuate 3.3V PWM to 1V peak.
+* [ ] **Power**: Design for -40°C operation and battery support.
 
 ---
 
@@ -235,26 +242,61 @@ These commands configure the internal mock engine when hardware is not available
 | `CMD:MOCK:RF:BASE:<float>` | Set the base amplitude (vertical offset). Default: `1.0`. |
 | `CMD:MOCK:RF:FAIL:<ON/OFF>` | Force the RF mock to return `NAN` (simulating sensor failure). |
 
----
+### HAL Board Commands (Manual/Debug Hardware Control)
 
-## 7. Mock Simulation Details
+These commands provide direct hardware control for manual testing and debugging. They bypass the FSM and directly manipulate hardware via HAL drivers.
 
-When running without real hardware (or when `bsp_rf.c` is in mock mode), the system simulates the RF response mathematically.
+#### LED Control
 
-### RF Response Model
-The mock generates a **parabolic dip (minimum)** to simulate the resonance circuit absorption.
-*   **Formula**: $Amplitude = Base + Curvature \cdot (V_{dac} - V_{res})^2 + Noise$
-*   **Behavior**: The firmware's peak detection algorithm looks for a **minimum** amplitude.
-*   **Default**: A minimum at **1.2V** with a base amplitude of **1.0V**.
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:LED:SET:<id>:<state>` | Set LED state (0=OFF, 1=ON) | `STAT:HAL_LED_<id>_ON/OFF` |
+| `CMD:HAL:LED:GET:<id>` | Read LED state | `STAT:HAL_LED_<id>:<0/1>` |
+| `CMD:HAL:LED:TOGGLE:<id>` | Toggle LED state | `STAT:HAL_LED_<id>_TOG` |
 
-### Verification
-*   **Correctness**: The mock correctly produces a "U" shape, and the `rf_measure.c` logic correctly searches for a minimum (`if (amp < local_best_amp)`).
-*   **Limitations**: The mock does not currently simulate the Q-factor change significantly (it only adds a small linear offset based on Q-voltage).
+*LED IDs: 0=INIT (Green), 1=MEAS (Blue), 2=EXCITE (Yellow), 3=ERR (Red)*
 
-### Missing CLI Features (TODO)
-*   **RF State Readback**: There is currently no command (e.g., `CMD:RF:STAT`) to read the instantaneous state of the RF hardware (Excitation On/Off, Current DAC Voltage). This must be inferred from `CMD:TRACE` or `CMD:LEDS` (Excite LED).
-*   **Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing. The CLI relies on the FSM to drive these.
+#### Button
 
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:BTN:READ` | Read physical button state | `STAT:HAL_BTN:PRESSED` or `STAT:HAL_BTN:RELEASED` |
+
+#### ADC
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:ADC:READ` | Read ADC as voltage | `STAT:HAL_ADC:1.650V` |
+| `CMD:HAL:ADC:RAW` | Read raw 12-bit ADC value | `STAT:HAL_ADC:2048` |
+
+#### DAC
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:DAC:SET:<ch>:<voltage>` | Set DAC channel voltage (0.0-3.3V) | `STAT:HAL_DAC_<ch>:<voltage>V` |
+| `CMD:HAL:DAC:RAW:<ch>:<value>` | Set DAC raw 12-bit value (0-4095) | `STAT:HAL_DAC_<ch>:<value>` |
+
+*DAC Channels: 0=FREQ_TUNE (PA4), 1=Q_FACTOR (PA5)*
+
+#### RF Gain
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:GAIN:SET:<level>` | Set RF gain level (0-3) | `STAT:HAL_GAIN:<level>` |
+| `CMD:HAL:GAIN:GET` | Read current RF gain level | `STAT:HAL_GAIN:<level>` |
+
+#### NINA Bluetooth Module
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:NINA:RST:<state>` | Set reset pin (0=reset, 1=run) | `STAT:HAL_NINA:RESET` or `STAT:HAL_NINA:RUN` |
+| `CMD:HAL:NINA:STOP:<state>` | Set stop pin (0=run, 1=stop) | `STAT:HAL_NINA:RUNNING` or `STAT:HAL_NINA:STOPPED` |
+
+#### Initialization
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:INIT` | Initialize HAL Board module | `STAT:HAL_INIT_OK` |
 
 ### latest Todos
 
@@ -263,13 +305,11 @@ und dann testen mit frequenzgenerator, im prinzip alles
 
 Handyapp und bluetooth funktion wird nicht implementiert, es wird nur das UART protokoll für die Messdaten implementiert, wenn die nächste gruppe dann weiter macht brauchen die nurnoch die app draufsetzen.
 
-Die Commandhandler für input/output sollen noch implementiert werden (Buttons ADC LED usw.) hal gpio und die todos 
-
-
+Die Commandhandler für input/output sollen noch implementiert werden (Buttons ADC LED usw.) hal gpio und die todos
 
 Roman:
 Plakat machen
 OPV oder Pegelwandler dimensionieren 1V für benni
-Buck converter für 1v pegelwandler (vllt) Dimensionieren 
+Buck converter für 1v pegelwandler (vllt) Dimensionieren
 Boost converter für 33v umdimensionieren
 Dimensionierungen für meine Bauteile dokumentieren (Matlab)

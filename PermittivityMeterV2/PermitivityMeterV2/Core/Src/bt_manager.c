@@ -445,6 +445,43 @@ static bool handle_hal_btn_command(const char *payload)
     return false;
 }
 
+static bool handle_hal_nina_command(const char *payload)
+{
+    /* CMD:HAL:NINA:RST:<state>  (0=reset active, 1=run) */
+    if (strncmp(payload, "RST:", 4) == 0) {
+        uint32_t state = 0;
+        if (!parse_uint_arg(payload + 4, &state)) {
+            BT_SendStatus("HAL_NINA_ERR");
+            return true;
+        }
+        
+        if (HalBoard_NINA_SetReset((uint8_t)state) == HAL_BOARD_OK) {
+            BT_SendStatus(state ? "HAL_NINA:RUN" : "HAL_NINA:RESET");
+        } else {
+            BT_SendStatus("HAL_NINA_ERR");
+        }
+        return true;
+    }
+    
+    /* CMD:HAL:NINA:STOP:<state>  (0=run, 1=stop) */
+    if (strncmp(payload, "STOP:", 5) == 0) {
+        uint32_t state = 0;
+        if (!parse_uint_arg(payload + 5, &state)) {
+            BT_SendStatus("HAL_NINA_ERR");
+            return true;
+        }
+        
+        if (HalBoard_NINA_SetStop((uint8_t)state) == HAL_BOARD_OK) {
+            BT_SendStatus(state ? "HAL_NINA:STOPPED" : "HAL_NINA:RUNNING");
+        } else {
+            BT_SendStatus("HAL_NINA_ERR");
+        }
+        return true;
+    }
+    
+    return false;
+}
+
 static bool handle_hal_command(const char *buffer)
 {
     if (buffer == NULL || strncmp(buffer, "CMD:HAL:", 8) != 0) {
@@ -472,6 +509,10 @@ static bool handle_hal_command(const char *buffer)
     
     if (strncmp(payload, "BTN:", 4) == 0) {
         return handle_hal_btn_command(payload + 4);
+    }
+    
+    if (strncmp(payload, "NINA:", 5) == 0) {
+        return handle_hal_nina_command(payload + 5);
     }
     
     /* CMD:HAL:INIT - Initialize HAL Board */
