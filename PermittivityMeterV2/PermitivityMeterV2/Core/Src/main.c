@@ -194,6 +194,7 @@ int main(void)
     if (btn_state == HL_GPIO_LOW)  // Button pressed (active-low)
     {
       HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_HIGH);
+      HL_GPIO_Toggle(HL_GPIO_LED_INIT);
     }
     else
     {
@@ -213,6 +214,7 @@ int main(void)
   HL_DAC_SetVoltage(DAC_CH_Q_FACTOR, 2.5f);    // PA5 = 2.5V
   while (1) { HAL_IWDG_Refresh(&hiwdg); HAL_Delay(100); }
   */
+
 
   /* -------------------------------------------------------------------------- */
   /* TEST 4: DAC Triangle Wave Test                                             */
@@ -251,14 +253,22 @@ int main(void)
   /* Expected: Meas LED toggles when ADC buffer fills                           */
   /* -------------------------------------------------------------------------- */
   /*
+  HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, 3.2);
   while (1)
   {
     HAL_IWDG_Refresh(&hiwdg);
-    if (HL_ADC_IsBufferReady())
+    if (HL_ADC_IsBufferReady())  // First check if a buffer is ready
     {
-      HL_GPIO_Toggle(HL_GPIO_LED_MEAS);
+      uint16_t *buffer = HL_ADC_GetBuffer();  // Get the buffer (clears ready flag)
+      if (buffer != NULL && !HL_ADC_IsBufferEmpty(buffer))
+      {
+        HL_GPIO_Write(HL_GPIO_LED_MEAS, HL_GPIO_HIGH);  // LED ON = buffer has data
+      }
+      else
+      {
+        HL_GPIO_Write(HL_GPIO_LED_MEAS, HL_GPIO_LOW);   // LED OFF = buffer empty
+      }
     }
-    HAL_Delay(1);
   }
   */
 
@@ -288,21 +298,21 @@ int main(void)
   */
 
   /* -------------------------------------------------------------------------- */
-  /* TEST 8: Driver Layer UI Test                                               */
-  /* Verifies: Driver_UI_SetLED, Driver_UI_GetButton via BSP                    */
-  /* Expected: Same as TEST 2 but through driver layer                          */
+  /* TEST 8: HAL GPIO UI Test                                                   */
+  /* Verifies: HL_GPIO_Read, HL_GPIO_Write for button->LED                      */
+  /* Expected: Press button -> Error LED ON, Release -> Error LED OFF           */
   /* -------------------------------------------------------------------------- */
   /*
-  */
-  #include "drv/driver_board.h"
-  Driver_Init();
   while (1)
   {
     HAL_IWDG_Refresh(&hiwdg);
-    uint8_t pressed = Driver_UI_GetButton();
-    Driver_UI_SetLED(3, pressed);  // LED_ERR = 3
+    HL_GPIO_State_t btn_state;
+    HL_GPIO_Read(HL_GPIO_BTN_USER, &btn_state);
+    uint8_t pressed = (btn_state == HL_GPIO_LOW) ? 1U : 0U;
+    HL_GPIO_Write(HL_GPIO_LED_ERR, pressed ? HL_GPIO_HIGH : HL_GPIO_LOW);
     HAL_Delay(10);
   }
+  */
 
   /* ========================================================================== */
   /*                         FSM INITIALIZATION                                 */
@@ -633,7 +643,7 @@ static void MX_TIM6_Init(void)
   {
     Error_Handler();
   }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
   {
@@ -763,7 +773,7 @@ static void MX_GPIO_Init(void)
                           |NINA_DTR_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, ERR_LED_Pin|ERR_LEDB6_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(ERR_LED_GPIO_Port, ERR_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -793,12 +803,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : ERR_LED_Pin ERR_LEDB6_Pin */
-  GPIO_InitStruct.Pin = ERR_LED_Pin|ERR_LEDB6_Pin;
+  /*Configure GPIO pin : ERR_LED_Pin */
+  GPIO_InitStruct.Pin = ERR_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(ERR_LED_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA8 */
   GPIO_InitStruct.Pin = GPIO_PIN_8;

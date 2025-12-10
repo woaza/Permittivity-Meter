@@ -144,7 +144,27 @@ bool HL_ADC_IsBufferReady(void)
     return buffer_ready_flag;
 }
 
+/**
+ * @brief Check if the buffer contains all zeros (empty)
+ * @param buffer: Pointer to the buffer to check
+ * @retval bool: true if all values are zero, false if any non-zero value exists
+ */
+bool HL_ADC_IsBufferEmpty(const uint16_t *buffer)
+{
+    if (buffer == NULL)
+    {
+        return true;  // NULL buffer is considered empty
+    }
 
+    for (uint32_t i = 0; i < ADC_BUFFER_SIZE; i++)
+    {
+        if (buffer[i] != 0)
+        {
+            return false;  // Found a non-zero value
+        }
+    }
+    return true;  // All values are zero
+}
 
 /* Callbacks -----------------------------------------------------------------*/
 

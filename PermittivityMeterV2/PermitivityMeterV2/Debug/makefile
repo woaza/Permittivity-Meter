@@ -14,7 +14,6 @@ RM := rm -rf
 -include Core/Src/test/subdir.mk
 -include Core/Src/mocks/subdir.mk
 -include Core/Src/hl/subdir.mk
--include Core/Src/drv/subdir.mk
 -include Core/Src/subdir.mk
 -include objects.mk
 

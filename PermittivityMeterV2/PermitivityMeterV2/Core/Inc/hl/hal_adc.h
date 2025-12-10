@@ -75,7 +75,12 @@ extern "C"
 	 */
 	bool HL_ADC_IsBufferReady(void);
 
-
+	/**
+	 * @brief Check if the buffer contains all zeros (empty)
+	 * @param buffer: Pointer to the buffer to check
+	 * @retval bool: true if all values are zero, false if any non-zero value exists
+	 */
+	bool HL_ADC_IsBufferEmpty(const uint16_t *buffer);
 
 	#ifdef __cplusplus
 }

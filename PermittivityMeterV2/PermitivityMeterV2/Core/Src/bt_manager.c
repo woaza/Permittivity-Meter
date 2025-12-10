@@ -9,7 +9,8 @@
 #include "bsp_lcd.h"
 #include "bsp_ui.h"
 #include "debug_log.h"
-#include "drv/driver_board.h"
+#include "mocks/mock_board.h"
+#include "hl/hal_board.h"
 #include "rf_trace.h"
 #include "usb_cdc_bridge.h"
 
@@ -20,7 +21,7 @@ static void output_line(const char *line)
     if (line == NULL) {
         return;
     }
-    Driver_BT_SetLastTx(line);
+    MockBoard_BT_SetLastTx(line);
     PC_HostBridge_Send(line);
     Debug_LogDriver("BT_TX", line);
 }
@@ -199,9 +200,294 @@ static bool handle_mock_command(const char *buffer)
     return true;
 }
 
+/* -------------------------------------------------------------------------- */
+/*                     HAL Board Command Handlers (Handbetrieb)               */
+/* -------------------------------------------------------------------------- */
+
+static bool parse_uint_arg(const char *text, uint32_t *value)
+{
+    if (text == NULL || value == NULL) {
+        return false;
+    }
+    char *end = NULL;
+    const unsigned long parsed = strtoul(text, &end, 10);
+    if (text == end) {
+        return false;
+    }
+    *value = (uint32_t)parsed;
+    return true;
+}
+
+static bool handle_hal_led_command(const char *payload)
+{
+    /* CMD:HAL:LED:SET:<id>:<state>  e.g. CMD:HAL:LED:SET:0:1 */
+    if (strncmp(payload, "SET:", 4) == 0) {
+        uint32_t led_id = 0, state = 0;
+        const char *args = payload + 4;
+        
+        /* Parse led_id */
+        if (!parse_uint_arg(args, &led_id)) {
+            BT_SendStatus("HAL_LED_ERR");
+            return true;
+        }
+        
+        /* Find colon separator */
+        const char *colon = strchr(args, ':');
+        if (colon == NULL) {
+            BT_SendStatus("HAL_LED_ERR");
+            return true;
+        }
+        
+        /* Parse state */
+        if (!parse_uint_arg(colon + 1, &state)) {
+            BT_SendStatus("HAL_LED_ERR");
+            return true;
+        }
+        
+        if (HalBoard_LED_Set((uint8_t)led_id, (uint8_t)state) == HAL_BOARD_OK) {
+            char resp[32];
+            snprintf(resp, sizeof(resp), "HAL_LED_%u_%s", (unsigned)led_id, state ? "ON" : "OFF");
+            BT_SendStatus(resp);
+        } else {
+            BT_SendStatus("HAL_LED_ERR");
+        }
+        return true;
+    }
+    
+    /* CMD:HAL:LED:GET:<id> */
+    if (strncmp(payload, "GET:", 4) == 0) {
+        uint32_t led_id = 0;
+        if (!parse_uint_arg(payload + 4, &led_id)) {
+            BT_SendStatus("HAL_LED_ERR");
+            return true;
+        }
+        
+        uint8_t state = 0;
+        if (HalBoard_LED_Get((uint8_t)led_id, &state) == HAL_BOARD_OK) {
+            char resp[32];
+            snprintf(resp, sizeof(resp), "HAL_LED_%u:%u", (unsigned)led_id, state);
+            BT_SendStatus(resp);
+        } else {
+            BT_SendStatus("HAL_LED_ERR");
+        }
+        return true;
+    }
+    
+    /* CMD:HAL:LED:TOGGLE:<id> */
+    if (strncmp(payload, "TOGGLE:", 7) == 0) {
+        uint32_t led_id = 0;
+        if (!parse_uint_arg(payload + 7, &led_id)) {
+            BT_SendStatus("HAL_LED_ERR");
+            return true;
+        }
+        
+        if (HalBoard_LED_Toggle((uint8_t)led_id) == HAL_BOARD_OK) {
+            char resp[32];
+            snprintf(resp, sizeof(resp), "HAL_LED_%u_TOG", (unsigned)led_id);
+            BT_SendStatus(resp);
+        } else {
+            BT_SendStatus("HAL_LED_ERR");
+        }
+        return true;
+    }
+    
+    return false;
+}
+
+static bool handle_hal_adc_command(const char *payload)
+{
+    /* CMD:HAL:ADC:READ */
+    if (strncmp(payload, "READ", 4) == 0) {
+        float voltage = 0.0f;
+        if (HalBoard_ADC_ReadVoltage(&voltage) == HAL_BOARD_OK) {
+            char resp[48];
+            snprintf(resp, sizeof(resp), "HAL_ADC:%.3fV", voltage);
+            BT_SendStatus(resp);
+        } else {
+            BT_SendStatus("HAL_ADC_ERR");
+        }
+        return true;
+    }
+    
+    /* CMD:HAL:ADC:RAW */
+    if (strncmp(payload, "RAW", 3) == 0) {
+        uint16_t value = 0;
+        if (HalBoard_ADC_ReadSingle(&value) == HAL_BOARD_OK) {
+            char resp[32];
+            snprintf(resp, sizeof(resp), "HAL_ADC:%u", value);
+            BT_SendStatus(resp);
+        } else {
+            BT_SendStatus("HAL_ADC_ERR");
+        }
+        return true;
+    }
+    
+    return false;
+}
+
+static bool handle_hal_dac_command(const char *payload)
+{
+    /* CMD:HAL:DAC:SET:<ch>:<voltage>  e.g. CMD:HAL:DAC:SET:0:1.65 */
+    if (strncmp(payload, "SET:", 4) == 0) {
+        uint32_t channel = 0;
+        float voltage = 0.0f;
+        const char *args = payload + 4;
+        
+        if (!parse_uint_arg(args, &channel)) {
+            BT_SendStatus("HAL_DAC_ERR");
+            return true;
+        }
+        
+        const char *colon = strchr(args, ':');
+        if (colon == NULL) {
+            BT_SendStatus("HAL_DAC_ERR");
+            return true;
+        }
+        
+        if (!parse_float_arg(colon + 1, &voltage)) {
+            BT_SendStatus("HAL_DAC_ERR");
+            return true;
+        }
+        
+        if (HalBoard_DAC_SetVoltage((uint8_t)channel, voltage) == HAL_BOARD_OK) {
+            char resp[48];
+            snprintf(resp, sizeof(resp), "HAL_DAC_%u:%.2fV", (unsigned)channel, voltage);
+            BT_SendStatus(resp);
+        } else {
+            BT_SendStatus("HAL_DAC_ERR");
+        }
+        return true;
+    }
+    
+    /* CMD:HAL:DAC:RAW:<ch>:<value> */
+    if (strncmp(payload, "RAW:", 4) == 0) {
+        uint32_t channel = 0, raw_val = 0;
+        const char *args = payload + 4;
+        
+        if (!parse_uint_arg(args, &channel)) {
+            BT_SendStatus("HAL_DAC_ERR");
+            return true;
+        }
+        
+        const char *colon = strchr(args, ':');
+        if (colon == NULL) {
+            BT_SendStatus("HAL_DAC_ERR");
+            return true;
+        }
+        
+        if (!parse_uint_arg(colon + 1, &raw_val)) {
+            BT_SendStatus("HAL_DAC_ERR");
+            return true;
+        }
+        
+        if (HalBoard_DAC_SetRaw((uint8_t)channel, (uint16_t)raw_val) == HAL_BOARD_OK) {
+            char resp[48];
+            snprintf(resp, sizeof(resp), "HAL_DAC_%u:%u", (unsigned)channel, (unsigned)raw_val);
+            BT_SendStatus(resp);
+        } else {
+            BT_SendStatus("HAL_DAC_ERR");
+        }
+        return true;
+    }
+    
+    return false;
+}
+
+static bool handle_hal_gain_command(const char *payload)
+{
+    /* CMD:HAL:GAIN:SET:<level> */
+    if (strncmp(payload, "SET:", 4) == 0) {
+        uint32_t level = 0;
+        if (!parse_uint_arg(payload + 4, &level)) {
+            BT_SendStatus("HAL_GAIN_ERR");
+            return true;
+        }
+        
+        if (HalBoard_RF_SetGain((uint8_t)level) == HAL_BOARD_OK) {
+            char resp[32];
+            snprintf(resp, sizeof(resp), "HAL_GAIN:%u", (unsigned)level);
+            BT_SendStatus(resp);
+        } else {
+            BT_SendStatus("HAL_GAIN_ERR");
+        }
+        return true;
+    }
+    
+    /* CMD:HAL:GAIN:GET */
+    if (strncmp(payload, "GET", 3) == 0) {
+        uint8_t level = 0;
+        if (HalBoard_RF_GetGain(&level) == HAL_BOARD_OK) {
+            char resp[32];
+            snprintf(resp, sizeof(resp), "HAL_GAIN:%u", level);
+            BT_SendStatus(resp);
+        } else {
+            BT_SendStatus("HAL_GAIN_ERR");
+        }
+        return true;
+    }
+    
+    return false;
+}
+
+static bool handle_hal_btn_command(const char *payload)
+{
+    /* CMD:HAL:BTN:READ */
+    if (strncmp(payload, "READ", 4) == 0) {
+        uint8_t state = 0;
+        if (HalBoard_Button_Read(&state) == HAL_BOARD_OK) {
+            BT_SendStatus(state ? "HAL_BTN:PRESSED" : "HAL_BTN:RELEASED");
+        } else {
+            BT_SendStatus("HAL_BTN_ERR");
+        }
+        return true;
+    }
+    
+    return false;
+}
+
+static bool handle_hal_command(const char *buffer)
+{
+    if (buffer == NULL || strncmp(buffer, "CMD:HAL:", 8) != 0) {
+        return false;
+    }
+
+    const char *payload = buffer + 8;
+    
+    /* Route to sub-handlers */
+    if (strncmp(payload, "LED:", 4) == 0) {
+        return handle_hal_led_command(payload + 4);
+    }
+    
+    if (strncmp(payload, "ADC:", 4) == 0) {
+        return handle_hal_adc_command(payload + 4);
+    }
+    
+    if (strncmp(payload, "DAC:", 4) == 0) {
+        return handle_hal_dac_command(payload + 4);
+    }
+    
+    if (strncmp(payload, "GAIN:", 5) == 0) {
+        return handle_hal_gain_command(payload + 5);
+    }
+    
+    if (strncmp(payload, "BTN:", 4) == 0) {
+        return handle_hal_btn_command(payload + 4);
+    }
+    
+    /* CMD:HAL:INIT - Initialize HAL Board */
+    if (strncmp(payload, "INIT", 4) == 0) {
+        HalBoard_Init();
+        BT_SendStatus("HAL_INIT_OK");
+        return true;
+    }
+    
+    BT_SendStatus("HAL_CMD_ERR");
+    return true;
+}
+
 void BT_Manager_Init(void)
 {
-    Driver_Init();
+    MockBoard_Init();
     PC_HostBridge_Init();
     s_pending_event = BT_EVENT_NONE;
     Debug_LogDriver("BT", "init");
@@ -234,6 +520,8 @@ void BT_ProcessIncoming(const char *buffer)
         send_trace_dump();
     } else if (strncmp(buffer, "CMD:MOCK", 8) == 0) {
         handle_mock_command(buffer);
+    } else if (strncmp(buffer, "CMD:HAL", 7) == 0) {
+        handle_hal_command(buffer);
     } else {
         Debug_LogDriver("BT_RX", "IGN");
         return;
@@ -267,12 +555,12 @@ void BT_SendResult(MeasurementResult_t result)
 
 void BT_MockEnqueueCommand(const char *cmd)
 {
-    Driver_BT_QueueCommand(cmd);
+    MockBoard_BT_QueueCommand(cmd);
 }
 
 void BT_MockPump(void)
 {
-    const char *cmd = Driver_BT_DequeueCommand();
+    const char *cmd = MockBoard_BT_DequeueCommand();
     if (cmd != NULL) {
         BT_ProcessIncoming(cmd);
     }
@@ -280,6 +568,6 @@ void BT_MockPump(void)
 
 const char *BT_MockGetLastTx(void)
 {
-    return Driver_BT_GetLastTx();
+    return MockBoard_BT_GetLastTx();
 }
 

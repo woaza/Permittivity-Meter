@@ -1,13 +1,14 @@
 /**
  * @file    bsp_ui.c
  * @brief   Board Support Package for User Interface (LEDs, Buttons)
- * @version 2.0
+ * @version 2.1
  * @date    2025-12-09
- * @note    Uses driver layer for hardware abstraction.
+ * @note    Uses MockBoard for simulation (state machine path).
+ *          For direct hardware control, use HalBoard via CLI.
  */
 
 #include "bsp_ui.h"
-#include "drv/driver_board.h"
+#include "mocks/mock_board.h"
 #include "debug_log.h"
 
 #include <stdio.h>
@@ -29,28 +30,29 @@ static void log_led_change(uint8_t led_id, uint8_t state)
 
 void BSP_UI_Init(void)
 {
-    Driver_Init();
+    MockBoard_Init();
     Debug_LogDriver("UI", "init");
 }
 
 void BSP_LED_Set(uint8_t led_id, uint8_t state)
 {
-    Driver_UI_SetLED(led_id, state ? 1U : 0U);
+    MockBoard_UI_SetLED(led_id, state ? 1U : 0U);
     log_led_change(led_id, state ? 1U : 0U);
 }
 
 uint8_t BSP_LED_Get(uint8_t led_id)
 {
-    return Driver_UI_GetLED(led_id);
+    return MockBoard_UI_GetLED(led_id);
 }
 
 void BSP_Button_SetState(uint8_t pressed)
 {
-    Driver_UI_SetButton(pressed ? 1U : 0U);
+    MockBoard_UI_SetButton(pressed ? 1U : 0U);
     Debug_LogDriver("BTN", pressed ? "press" : "release");
 }
 
 uint8_t BSP_Button_GetState(void)
 {
-    return Driver_UI_GetButton();
+    return MockBoard_UI_GetButton();
 }
+
