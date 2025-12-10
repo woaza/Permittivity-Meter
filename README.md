@@ -298,6 +298,28 @@ These commands provide direct hardware control for manual testing and debugging.
 | :--- | :--- | :--- |
 | `CMD:HAL:INIT` | Initialize HAL Board module | `STAT:HAL_INIT_OK` |
 
+## 7. Mock Simulation Details
+
+When running without real hardware (or when `bsp_rf.c` is in mock mode), the system simulates the RF response mathematically.
+
+### RF Response Model
+
+The mock generates a **parabolic dip (minimum)** to simulate the resonance circuit absorption.
+
+* **Formula**: $Amplitude = Base + Curvature \cdot (V_{dac} - V_{res})^2 + Noise$
+* **Behavior**: The firmware's peak detection algorithm looks for a **minimum** amplitude.
+* **Default**: A minimum at **1.2V** with a base amplitude of **1.0V**.
+
+### Verification
+
+* **Correctness**: The mock correctly produces a "U" shape, and the `rf_measure.c` logic correctly searches for a minimum (`if (amp < local_best_amp)`).
+* **Limitations**: The mock does not currently simulate the Q-factor change significantly (it only adds a small linear offset based on Q-voltage).
+
+### Missing CLI Features (TODO)
+
+* **RF State Readback**: There is currently no command (e.g., `CMD:RF:STAT`) to read the instantaneous state of the RF hardware (Excitation On/Off, Current DAC Voltage). This must be inferred from `CMD:TRACE` or `CMD:LEDS` (Excite LED).
+* **Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing. The CLI relies on the FSM to drive these.
+
 ### latest Todos
 
 Umbauen auf real mode (siehe 3. Software architecture)
