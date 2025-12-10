@@ -298,6 +298,67 @@ These commands provide direct hardware control for manual testing and debugging.
 | :--- | :--- | :--- |
 | `CMD:HAL:INIT` | Initialize HAL Board module | `STAT:HAL_INIT_OK` |
 
+### HAL Board Architecture
+
+The HAL Board module (`hal_board.c`) provides a **direct hardware control interface** that bypasses the FSM. This is useful for manual testing and debugging.
+
+#### Command Flow
+
+```text
+Terminal/PC (UART)                                    STM32
+      │                                                 │
+      │  "CMD:HAL:LED:SET:0:1\n"                        │
+      └─────────────────────────────────────────────────►
+                          │
+                          ▼
+                ┌─────────────────────┐
+                │  BT_ProcessIncoming │  (bt_manager.c)
+                │  checks "CMD:HAL"   │
+                └─────────┬───────────┘
+                          ▼
+                ┌─────────────────────┐
+                │  handle_hal_command │  routes to sub-handler
+                └─────────┬───────────┘
+                          ▼
+                ┌─────────────────────────┐
+                │  handle_hal_led_command │  parses id=0, state=1
+                └─────────┬───────────────┘
+                          ▼
+                ┌─────────────────────┐
+                │  HalBoard_LED_Set() │  (hal_board.c)
+                └─────────┬───────────┘
+                          ▼
+                ┌─────────────────────┐
+                │  HL_GPIO_WritePin() │  (hal_gpio.c)
+                └─────────┬───────────┘
+                          ▼
+                      [LED ON!]
+```
+
+#### Layer Purpose
+
+| Layer | File | Purpose |
+| :--- | :--- | :--- |
+| **CLI Parser** | `bt_manager.c` | Parses ASCII commands, routes to handlers |
+| **HAL Board** | `hal_board.c` | Wrapper functions for hardware access |
+| **HAL Drivers** | `hal_gpio.c`, `hal_dac.c`, etc. | Direct STM32 register manipulation |
+
+#### Usage Example
+
+```bash
+# Set LED 0 (Green) ON
+CMD:HAL:LED:SET:0:1
+→ STAT:HAL_LED_0_ON
+
+# Read ADC voltage
+CMD:HAL:ADC:READ
+→ STAT:HAL_ADC:1.650V
+
+# Set DAC channel 0 to 1.5V
+CMD:HAL:DAC:SET:0:1.5
+→ STAT:HAL_DAC_0:1.50V
+```
+
 ## 7. Mock Simulation Details
 
 When running without real hardware (or when `bsp_rf.c` is in mock mode), the system simulates the RF response mathematically.
@@ -318,7 +379,7 @@ The mock generates a **parabolic dip (minimum)** to simulate the resonance circu
 ### Missing CLI Features (TODO)
 
 * **RF State Readback**: There is currently no command (e.g., `CMD:RF:STAT`) to read the instantaneous state of the RF hardware (Excitation On/Off, Current DAC Voltage). This must be inferred from `CMD:TRACE` or `CMD:LEDS` (Excite LED).
-* **Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing. The CLI relies on the FSM to drive these.
+* ~~**Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing.~~ **DONE**: `CMD:HAL:*` commands now provide direct hardware control (see Section 6: HAL Board Commands).
 
 ### latest Todos
 
