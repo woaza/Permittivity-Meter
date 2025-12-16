@@ -47,6 +47,9 @@ static void FSM_StartMeasurement(const char *reason_tag);
 static uint8_t FSM_IsMeasurementValid(const MeasurementResult_t *result);
 static void FSM_UpdateLCD(const char *line0, const char *line1);
 
+static void fmt_fixed_2(char *out, size_t out_len, float value);
+static void FSM_ShowResultOnLCD(const MeasurementResult_t *result);
+
 static void enqueue_event(FSM_Event_t evt)
 {
     if (evt == FSM_EVENT_NONE) {
@@ -252,10 +255,14 @@ static void FSM_OnEnter(AppState_t new_state)
         break;
 
     case STATE_CALCULATION:
+        /* RESULT state: show last measurement and wait for button press.
+         * After every successful measurement the system requires a new CAL.
+         */
         s_result_pending = 1U;
         BSP_RF_EnableExcitation(0U);
         BSP_LED_Set(LED_EXCITE, 0U);
-        FSM_UpdateLCD("RESULT", "Sending...");
+        s_calibration.is_valid = 0U;
+        FSM_ShowResultOnLCD(&s_last_result);
         break;
 
     case STATE_ERROR:
@@ -290,7 +297,7 @@ static void FSM_StartCalibration(const char *reason_tag)
 static void FSM_StartMeasurement(const char *reason_tag)
 {
     if (!s_calibration.is_valid) {
-        BT_SendStatus("ERR");
+        BT_SendStatus("ERR:NEED_CAL");
         Debug_LogEvent("FSM", "meas_reject");
         return;
     }
@@ -409,9 +416,8 @@ static void FSM_HandleMeasureSearch(void)
         BSP_RF_EnableExcitation(0U);
         BSP_LED_Set(LED_EXCITE, 0U);
         if (FSM_IsMeasurementValid(&s_last_result)) {
-            BT_SendResult(s_last_result);
             BSP_LED_Set(LED_MEAS, 0U);
-            FSM_TransitionTo(STATE_IDLE, "meas_ok");
+            FSM_TransitionTo(STATE_CALCULATION, "meas_ok");
         } else {
             BT_SendStatus("ERR:MEAS_INVALID");
             Debug_LogEvent("RF_MEAS", "invalid");
@@ -430,21 +436,79 @@ static void FSM_HandleMeasureSearch(void)
 
 static void FSM_HandleCalculation(void)
 {
-    if (!s_result_pending) {
+    if (s_result_pending) {
+        /* Send result once over the host link as well. */
+        BT_SendResult(s_last_result);
+        s_result_pending = 0U;
+    }
+
+    const FSM_Event_t evt = dequeue_event();
+    switch (evt) {
+    case FSM_EVENT_BUTTON_PRESS:
+        FSM_TransitionTo(STATE_IDLE, "btn_ack");
+        break;
+
+    case FSM_EVENT_BT_CAL:
+        FSM_StartCalibration("bt_cal_after_result");
+        break;
+
+    case FSM_EVENT_BT_MEAS:
+        /* Measurement requires a fresh CAL after each result. */
+        BT_SendStatus("ERR:NEED_CAL");
+        break;
+
+    case FSM_EVENT_BT_CONN:
+        BT_SendStatus("RDY");
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void fmt_fixed_2(char *out, size_t out_len, float value)
+{
+    if (out == NULL || out_len == 0U) {
         return;
     }
 
-    BT_SendResult(s_last_result);
-    BSP_LED_Set(LED_MEAS, 0U);
-    s_result_pending = 0U;
-
-    if (s_calibration.is_valid) {
-        FSM_TransitionTo(STATE_IDLE, "calc_done");
-    } else {
-        FSM_TransitionTo(STATE_ERROR, "calc_no_cal");
+    if (!isfinite(value)) {
+        (void)snprintf(out, out_len, "nan");
+        return;
     }
 
-    return;
+    const float scaled_f = value * 100.0f;
+    const int32_t scaled = (int32_t)lroundf(scaled_f);
+    const int32_t abs_scaled = (scaled < 0) ? -scaled : scaled;
+    const int32_t ip = abs_scaled / 100;
+    const int32_t fp = abs_scaled % 100;
+    if (scaled < 0) {
+        (void)snprintf(out, out_len, "-%ld.%02ld", (long)ip, (long)fp);
+    } else {
+        (void)snprintf(out, out_len, "%ld.%02ld", (long)ip, (long)fp);
+    }
+}
+
+static void FSM_ShowResultOnLCD(const MeasurementResult_t *result)
+{
+    char line0[LCD_CHAR_COUNT + 1U];
+    char line1[LCD_CHAR_COUNT + 1U];
+    char er[10];
+    char ei[10];
+    char dens[10];
+
+    if (result == NULL) {
+        FSM_UpdateLCD("RESULT", "(no data)");
+        return;
+    }
+
+    fmt_fixed_2(er, sizeof(er), result->epsilon_real);
+    fmt_fixed_2(ei, sizeof(ei), result->epsilon_imag);
+    fmt_fixed_2(dens, sizeof(dens), result->snow_density);
+
+    (void)snprintf(line0, sizeof(line0), "ER %s EI %s", er, ei);
+    (void)snprintf(line1, sizeof(line1), "D %skg/m3", dens);
+    FSM_UpdateLCD(line0, line1);
 }
 
 static void FSM_HandleError(void)

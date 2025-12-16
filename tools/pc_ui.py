@@ -34,6 +34,7 @@ except ImportError as exc:  # pragma: no cover
 
 DEFAULT_BAUD = 115200
 DEFAULT_TIMEOUT = 0.2
+DEFAULT_REFRESH_CMD_DELAY_S = 0.03
 
 LED_KEYS = ["STATUS", "MEAS", "EXCITE", "ERROR"]
 LED_ID_TO_KEY = {0: "STATUS", 1: "MEAS", 2: "EXCITE", 3: "ERROR"}
@@ -96,7 +97,7 @@ class SerialClient:
                 break
             if not raw:
                 continue
-            line = raw.decode("ascii", errors="replace").strip()
+            line = raw.decode("ascii", errors="replace").rstrip("\r\n")
             self._queue.put(line)
 
     def send_line(self, line: str) -> None:
@@ -185,6 +186,8 @@ def build_layout() -> list[list[sg.Element]]:
             sg.Text("Mode:"),
             sg.Text("AUTO", key="-MODE-", size=(8, 1), relief=sg.RELIEF_SUNKEN),
             sg.Checkbox("Manual mode (Handbetrieb)", key="-MANUAL-TOGGLE-", enable_events=True),
+            sg.Button("CAL", key="-CMD-CAL-"),
+            sg.Button("MEAS", key="-CMD-MEAS-"),
             sg.Button("HAL init", key="-CMD-HAL-INIT-"),
             sg.Button("Refresh", key="-CMD-REFRESH-"),
             sg.Checkbox("Auto refresh", key="-AUTO-REFRESH-", default=False, enable_events=True),
@@ -358,6 +361,12 @@ def build_layout() -> list[list[sg.Element]]:
 
 
 def parse_led_report(line: str, state: AppState, window: sg.Window) -> None:
+    # NOTE: `STAT:LED:*` comes from the FSM/mock UI layer (see firmware BSP_UI).
+    # In manual mode we control *real* LEDs via `CMD:HAL:LED:*` and receive
+    # `STAT:HW:LED:<id>:<0/1>` frames. Do not let mock snapshots overwrite the
+    # physical LED indicators.
+    if state.is_manual:
+        return
     parts = line.split(":")
     # STAT:LED:S:1:M:0:E:0:R:0
     if len(parts) < 10:
@@ -497,9 +506,13 @@ def parse_hw_report(line: str, state: AppState, window: sg.Window) -> None:
 
 
 def append_log(window: sg.Window, message: str) -> None:
-    existing = window["-LOG-"].get()
-    text = f"[{timestamp()}] {message}\n"
-    window["-LOG-"].update(existing + text)
+    msg = f"[{timestamp()}] {message.rstrip()}"
+    try:
+        # Prefer the element's built-in print: it's faster and handles newlines correctly.
+        window["-LOG-"].print(msg)
+    except Exception:
+        existing = window["-LOG-"].get() or ""
+        window["-LOG-"].update(existing + msg + "\n")
 
 
 def set_last_status(window: sg.Window, message: str) -> None:
@@ -527,10 +540,14 @@ def handle_line(line: str, state: AppState, window: sg.Window) -> None:
         state.is_manual = True
         window["-MODE-"].update("MANUAL")
         window["-MANUAL-TOGGLE-"].update(value=True)
+        window["-CMD-CAL-"].update(disabled=True)
+        window["-CMD-MEAS-"].update(disabled=True)
     elif line == "STAT:MANUAL_OFF":
         state.is_manual = False
         window["-MODE-"].update("AUTO")
         window["-MANUAL-TOGGLE-"].update(value=False)
+        window["-CMD-CAL-"].update(disabled=False)
+        window["-CMD-MEAS-"].update(disabled=False)
     elif line in ("STAT:HAL_LOCKED", "STAT:HAL_CMD_ERR", "STAT:HAL_PWM_ERR", "STAT:HAL_LED_ERR", "STAT:HAL_ADC_ERR", "STAT:HAL_DAC_ERR", "STAT:HAL_GAIN_ERR", "STAT:HAL_NINA_ERR", "STAT:HAL_LCD_ERR", "STAT:MANUAL_NOT_ACTIVE"):
         set_last_status(window, line)
     elif line.startswith("STAT:"):
@@ -539,8 +556,7 @@ def handle_line(line: str, state: AppState, window: sg.Window) -> None:
 
     if line in ("STAT:RDY", "STAT:MANUAL"):
         # Snapshot after connect/handshake.
-        send_command(state, CMD["leds"])
-        send_command(state, CMD["lcd"])
+        send_refresh(state, window)
 
 
 def send_command(state: AppState, cmd: str) -> None:
@@ -549,19 +565,46 @@ def send_command(state: AppState, cmd: str) -> None:
     state.client.send_line(cmd)
 
 
-def send_refresh(state: AppState) -> None:
-    """Poll the current status. HAL reads require manual mode."""
-    send_command(state, CMD["leds"])
-    send_command(state, CMD["lcd"])
-    # Only query HAL-side getters when manual mode is active.
+def send_command_ui(state: AppState, window: sg.Window, cmd: str) -> None:
+    """Send a command and also echo it in the UI log.
+
+    This is helpful when the device returns parsing errors (e.g. HAL_*_ERR):
+    you can correlate the error with the exact transmitted command.
+    """
+
+    append_log(window, f"[TX] {cmd}")
+    send_command(state, cmd)
+
+
+def send_many(state: AppState, window: sg.Window, commands: list[str], delay_s: float) -> None:
+    if state.client is None:
+        return
+
+    for cmd in commands:
+        send_command_ui(state, window, cmd)
+        time.sleep(max(0.0, delay_s))
+
+
+def send_refresh(state: AppState, window: sg.Window) -> None:
+    """Poll the current status.
+
+    We pace refresh bursts slightly; some embedded builds can overrun RX line
+    queues if many commands are sent back-to-back.
+    """
+    # Keep refresh lightweight to avoid flooding the device (especially with Auto Refresh).
+    # In manual mode the UI should show physical LED state (HAL), not the mock/FSM LEDs.
     if state.is_manual:
-        for led_id in range(4):
-            send_command(state, f"CMD:HAL:LED:GET:{led_id}")
-        send_command(state, "CMD:HAL:ADC:READ")
-        send_command(state, "CMD:HAL:ADC:RAW")
-        send_command(state, "CMD:HAL:GAIN:GET")
-        send_command(state, "CMD:HAL:BTN:READ")
-        send_command(state, "CMD:HAL:PWM:GET")
+        cmds = [
+            "CMD:HAL:LED:GET:0",
+            "CMD:HAL:LED:GET:1",
+            "CMD:HAL:LED:GET:2",
+            "CMD:HAL:LED:GET:3",
+            CMD["lcd"],
+        ]
+    else:
+        cmds = [CMD["leds"], CMD["lcd"]]
+
+    send_many(state, window, cmds, delay_s=DEFAULT_REFRESH_CMD_DELAY_S)
 
 
 def run_ui(args: argparse.Namespace) -> int:
@@ -585,7 +628,7 @@ def run_ui(args: argparse.Namespace) -> int:
                 continue
             state.client = client
             window["-STATUS-"].update(f"Status: Connected to {port}")
-            send_command(state, CMD["connect"])
+            send_command_ui(state, window, CMD["connect"])
             append_log(window, f"Connected on {port}")
         elif event == "-DISCONNECT-":
             if state.client:
@@ -594,82 +637,86 @@ def run_ui(args: argparse.Namespace) -> int:
             window["-STATUS-"].update("Status: Disconnected")
             append_log(window, "Disconnected")
         elif event == "-CMD-RESET-":
-            send_command(state, CMD["reset"])
+            send_command_ui(state, window, CMD["reset"])
+        elif event == "-CMD-CAL-":
+            send_command_ui(state, window, "CMD:CAL")
+        elif event == "-CMD-MEAS-":
+            send_command_ui(state, window, "CMD:MEAS")
         elif event == "-MANUAL-TOGGLE-":
             if bool(values.get("-MANUAL-TOGGLE-")):
-                send_command(state, CMD["manual_on"])
+                send_command_ui(state, window, CMD["manual_on"])
             else:
-                send_command(state, CMD["manual_off"])
+                send_command_ui(state, window, CMD["manual_off"])
         elif event == "-CMD-HAL-INIT-":
-            send_command(state, "CMD:HAL:INIT")
+            send_command_ui(state, window, "CMD:HAL:INIT")
         elif event == "-CMD-REFRESH-":
-            send_refresh(state)
+            send_refresh(state, window)
         elif event == "-CMD-BTN-PRESS-":
-            send_command(state, CMD["btn_press"])
+            send_command_ui(state, window, CMD["btn_press"])
         elif event == "-CMD-BTN-REL-":
-            send_command(state, CMD["btn_release"])
+            send_command_ui(state, window, CMD["btn_release"])
 
         elif event == "-HAL-ADC-READ-":
-            send_command(state, "CMD:HAL:ADC:READ")
+            send_command_ui(state, window, "CMD:HAL:ADC:READ")
         elif event == "-HAL-ADC-RAW-":
-            send_command(state, "CMD:HAL:ADC:RAW")
+            send_command_ui(state, window, "CMD:HAL:ADC:RAW")
         elif event == "-HAL-GAIN-GET-":
-            send_command(state, "CMD:HAL:GAIN:GET")
+            send_command_ui(state, window, "CMD:HAL:GAIN:GET")
         elif event == "-HAL-GAIN-SET-":
             text = str(values.get("-GAIN-SET-", "")).strip()
             if text:
-                send_command(state, f"CMD:HAL:GAIN:SET:{text}")
+                send_command_ui(state, window, f"CMD:HAL:GAIN:SET:{text}")
         elif event == "-HAL-BTN-READ-":
-            send_command(state, "CMD:HAL:BTN:READ")
+            send_command_ui(state, window, "CMD:HAL:BTN:READ")
 
         elif event == "-HAL-PWM-START-":
-            send_command(state, "CMD:HAL:PWM:START")
+            send_command_ui(state, window, "CMD:HAL:PWM:START")
         elif event == "-HAL-PWM-STOP-":
-            send_command(state, "CMD:HAL:PWM:STOP")
+            send_command_ui(state, window, "CMD:HAL:PWM:STOP")
         elif event == "-HAL-PWM-GET-":
-            send_command(state, "CMD:HAL:PWM:GET")
+            send_command_ui(state, window, "CMD:HAL:PWM:GET")
         elif event == "-HAL-PWM-FREQ-":
             text = str(values.get("-PWM-FREQ-SET-", "")).strip()
             if text:
-                send_command(state, f"CMD:HAL:PWM:FREQ:{text}")
+                send_command_ui(state, window, f"CMD:HAL:PWM:FREQ:{text}")
         elif event == "-HAL-PWM-DUTY-":
             text = str(values.get("-PWM-DUTY-SET-", "")).strip()
             if text:
-                send_command(state, f"CMD:HAL:PWM:DUTY:{text}")
+                send_command_ui(state, window, f"CMD:HAL:PWM:DUTY:{text}")
 
         elif event == "-CMD-LCD-SNAPSHOT-":
-            send_command(state, CMD["lcd"])
+            send_command_ui(state, window, CMD["lcd"])
         elif event == "-CMD-LEDS-SNAPSHOT-":
-            send_command(state, CMD["leds"])
+            send_command_ui(state, window, CMD["leds"])
         elif event == "-HAL-LCD-SET-0-":
             text = str(values.get("-LCD0-SET-", ""))
-            send_command(state, f"CMD:HAL:LCD:SET:0:{text}")
+            send_command_ui(state, window, f"CMD:HAL:LCD:SET:0:{text}")
         elif event == "-HAL-LCD-SET-1-":
             text = str(values.get("-LCD1-SET-", ""))
-            send_command(state, f"CMD:HAL:LCD:SET:1:{text}")
+            send_command_ui(state, window, f"CMD:HAL:LCD:SET:1:{text}")
 
         elif event == "-NINA-RST-SET-":
-            send_command(state, f"CMD:HAL:NINA:RST:{1 if bool(values.get('-NINA-RST-SET-')) else 0}")
+            send_command_ui(state, window, f"CMD:HAL:NINA:RST:{1 if bool(values.get('-NINA-RST-SET-')) else 0}")
         elif event == "-NINA-STOP-SET-":
-            send_command(state, f"CMD:HAL:NINA:STOP:{1 if bool(values.get('-NINA-STOP-SET-')) else 0}")
+            send_command_ui(state, window, f"CMD:HAL:NINA:STOP:{1 if bool(values.get('-NINA-STOP-SET-')) else 0}")
 
         elif event == "-RAW-SEND-":
             raw = str(values.get("-RAW-", "")).strip()
             if raw:
-                send_command(state, raw)
+                send_command_ui(state, window, raw)
 
         elif event == "-MOCK-FAIL-":
-            send_command(state, f"CMD:MOCK:RF:FAIL:{'ON' if bool(values.get('-MOCK-FAIL-')) else 'OFF'}")
+            send_command_ui(state, window, f"CMD:MOCK:RF:FAIL:{'ON' if bool(values.get('-MOCK-FAIL-')) else 'OFF'}")
         elif event == "-MOCK-APPLY-":
             res = str(values.get("-MOCK-RES-", "")).strip()
             noise = str(values.get("-MOCK-NOISE-", "")).strip()
             base = str(values.get("-MOCK-BASE-", "")).strip()
             if res:
-                send_command(state, f"CMD:MOCK:RF:RES:{res}")
+                send_command_ui(state, window, f"CMD:MOCK:RF:RES:{res}")
             if noise:
-                send_command(state, f"CMD:MOCK:RF:NOISE:{noise}")
+                send_command_ui(state, window, f"CMD:MOCK:RF:NOISE:{noise}")
             if base:
-                send_command(state, f"CMD:MOCK:RF:BASE:{base}")
+                send_command_ui(state, window, f"CMD:MOCK:RF:BASE:{base}")
 
         # LED HAL controls
         if isinstance(event, str) and event.startswith("-HAL-LED-"):
@@ -684,13 +731,13 @@ def run_ui(args: argparse.Namespace) -> int:
                 led_id = -1
             if 0 <= led_id <= 3:
                 if action == "ON":
-                    send_command(state, f"CMD:HAL:LED:SET:{led_id}:1")
+                    send_command_ui(state, window, f"CMD:HAL:LED:SET:{led_id}:1")
                 elif action == "OFF":
-                    send_command(state, f"CMD:HAL:LED:SET:{led_id}:0")
+                    send_command_ui(state, window, f"CMD:HAL:LED:SET:{led_id}:0")
                 elif action == "TOG":
-                    send_command(state, f"CMD:HAL:LED:TOGGLE:{led_id}")
+                    send_command_ui(state, window, f"CMD:HAL:LED:TOGGLE:{led_id}")
                 elif action == "GET":
-                    send_command(state, f"CMD:HAL:LED:GET:{led_id}")
+                    send_command_ui(state, window, f"CMD:HAL:LED:GET:{led_id}")
 
         elif event in ("-DAC0-", "-DAC1-"):
             # Debounce slider traffic; still no periodic polling.
@@ -706,13 +753,13 @@ def run_ui(args: argparse.Namespace) -> int:
             if now - state._last_slider_tx[ch] < 0.15:
                 continue
             state._last_slider_tx[ch] = now
-            send_command(state, f"CMD:HAL:DAC:SET:{ch}:{volts:.2f}")
+            send_command_ui(state, window, f"CMD:HAL:DAC:SET:{ch}:{volts:.2f}")
 
         elif event in ("-HAL-DAC-RAW-0-", "-HAL-DAC-RAW-1-"):
             ch = 0 if event.endswith("0-") else 1
             text = str(values.get(f"-DAC{ch}-RAW-", "")).strip()
             if text:
-                send_command(state, f"CMD:HAL:DAC:RAW:{ch}:{text}")
+                send_command_ui(state, window, f"CMD:HAL:DAC:RAW:{ch}:{text}")
 
         # Optional periodic polling
         if state.client and bool(values.get("-AUTO-REFRESH-")):
@@ -723,7 +770,7 @@ def run_ui(args: argparse.Namespace) -> int:
             now = time.monotonic()
             if now - state._last_poll_s >= max(0.2, interval):
                 state._last_poll_s = now
-                send_refresh(state)
+                send_refresh(state, window)
 
         if state.client:
             for line in state.client.poll():

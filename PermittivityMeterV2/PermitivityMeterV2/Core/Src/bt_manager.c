@@ -318,6 +318,7 @@ static bool handle_hal_led_command(const char *payload)
         /* Parse led_id */
         if (!parse_uint_arg(args, &led_id)) {
             BT_SendStatus("HAL_LED_ERR");
+            output_hw_framef("HAL:LED:ERR:SET:PARSE_ID");
             return true;
         }
         
@@ -325,22 +326,26 @@ static bool handle_hal_led_command(const char *payload)
         const char *colon = strchr(args, ':');
         if (colon == NULL) {
             BT_SendStatus("HAL_LED_ERR");
+            output_hw_framef("HAL:LED:ERR:SET:SEP");
             return true;
         }
         
         /* Parse state */
         if (!parse_uint_arg(colon + 1, &state)) {
             BT_SendStatus("HAL_LED_ERR");
+            output_hw_framef("HAL:LED:ERR:SET:PARSE_STATE");
             return true;
         }
-        
-        if (HalBoard_LED_Set((uint8_t)led_id, (uint8_t)state) == HAL_BOARD_OK) {
+
+        const HalBoard_Status_t st = HalBoard_LED_Set((uint8_t)led_id, (uint8_t)state);
+        if (st == HAL_BOARD_OK) {
             char resp[32];
             snprintf(resp, sizeof(resp), "HAL_LED_%u_%s", (unsigned)led_id, state ? "ON" : "OFF");
             BT_SendStatus(resp);
             output_hw_framef("LED:%u:%u", (unsigned)led_id, state ? 1U : 0U);
         } else {
             BT_SendStatus("HAL_LED_ERR");
+            output_hw_framef("HAL:LED:ERR:SET:HW:%u:%u:%lu", (unsigned)led_id, (unsigned)state, (unsigned long)st);
         }
         return true;
     }
@@ -350,17 +355,20 @@ static bool handle_hal_led_command(const char *payload)
         uint32_t led_id = 0;
         if (!parse_uint_arg(payload + 4, &led_id)) {
             BT_SendStatus("HAL_LED_ERR");
+            output_hw_framef("HAL:LED:ERR:GET:PARSE_ID");
             return true;
         }
         
         uint8_t state = 0;
-        if (HalBoard_LED_Get((uint8_t)led_id, &state) == HAL_BOARD_OK) {
+        const HalBoard_Status_t st = HalBoard_LED_Get((uint8_t)led_id, &state);
+        if (st == HAL_BOARD_OK) {
             char resp[32];
             snprintf(resp, sizeof(resp), "HAL_LED_%u:%u", (unsigned)led_id, state);
             BT_SendStatus(resp);
             output_hw_framef("LED:%u:%u", (unsigned)led_id, (unsigned)state);
         } else {
             BT_SendStatus("HAL_LED_ERR");
+            output_hw_framef("HAL:LED:ERR:GET:HW:%u:%lu", (unsigned)led_id, (unsigned long)st);
         }
         return true;
     }
@@ -370,10 +378,12 @@ static bool handle_hal_led_command(const char *payload)
         uint32_t led_id = 0;
         if (!parse_uint_arg(payload + 7, &led_id)) {
             BT_SendStatus("HAL_LED_ERR");
+            output_hw_framef("HAL:LED:ERR:TOG:PARSE_ID");
             return true;
         }
-        
-        if (HalBoard_LED_Toggle((uint8_t)led_id) == HAL_BOARD_OK) {
+
+        const HalBoard_Status_t st = HalBoard_LED_Toggle((uint8_t)led_id);
+        if (st == HAL_BOARD_OK) {
             char resp[32];
             snprintf(resp, sizeof(resp), "HAL_LED_%u_TOG", (unsigned)led_id);
             BT_SendStatus(resp);
@@ -383,6 +393,7 @@ static bool handle_hal_led_command(const char *payload)
             }
         } else {
             BT_SendStatus("HAL_LED_ERR");
+            output_hw_framef("HAL:LED:ERR:TOG:HW:%u:%lu", (unsigned)led_id, (unsigned long)st);
         }
         return true;
     }

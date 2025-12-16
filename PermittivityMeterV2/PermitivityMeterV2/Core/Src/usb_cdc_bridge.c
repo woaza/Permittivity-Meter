@@ -22,6 +22,7 @@ static volatile uint8_t s_rx_line_head = 0U;
 static volatile uint8_t s_rx_line_tail = 0U;
 
 static uint8_t s_rx_to_idle_buf[RX_TO_IDLE_BUF_SIZE];
+static uint8_t s_rx_to_idle_copy[RX_TO_IDLE_BUF_SIZE];
 
 static uint8_t s_rx_byte_ring[RX_BYTE_RING_SIZE];
 static volatile uint16_t s_rx_byte_head = 0U;
@@ -286,13 +287,27 @@ void PC_HostBridge_Send(const char *str)
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
     if (huart == &UART_BRIDGE_HANDLE) {
+        /*
+         * Important: minimize the RX "dead time" between idle events.
+         * If we process bytes (loop/push) before re-arming, the host can start
+         * sending the next command and we may drop its leading bytes.
+         *
+         * Solution: copy out the received bytes quickly, re-arm immediately,
+         * then push the copied bytes into the ring.
+         */
+        uint32_t n = 0U;
         if (Size > 0U && Size <= (uint16_t)sizeof(s_rx_to_idle_buf)) {
-            PC_HostBridge_OnRx(s_rx_to_idle_buf, (uint32_t)Size);
+            n = (uint32_t)Size;
+            memcpy(s_rx_to_idle_copy, s_rx_to_idle_buf, n);
         }
 
         /* Re-arm receive-to-idle unless we're in polling mode fallback. */
         if (!s_use_polling_rx) {
             start_uart_rx_to_idle();
+        }
+
+        if (n > 0U) {
+            PC_HostBridge_OnRx(s_rx_to_idle_copy, n);
         }
     }
 }

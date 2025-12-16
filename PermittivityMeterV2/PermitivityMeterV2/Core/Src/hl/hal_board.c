@@ -156,26 +156,31 @@ HalBoard_Status_t HalBoard_ADC_ReadSingle(uint16_t *value)
         return HAL_BOARD_ERROR_INVALID_PARAM;
     }
 
-    /* Use HAL ADC for single conversion */
-    extern ADC_HandleTypeDef hadc1;
-    
-    /* Start conversion */
-    if (HAL_ADC_Start(&hadc1) != HAL_OK)
+    /*
+     * The application runs ADC1 continuously using TIM6 trigger + DMA circular
+     * mode (see HL_ADC_*). Starting a blocking single conversion here would
+     * conflict with the running DMA engine and typically fails with HAL_BUSY.
+     *
+     * So: serve "HAL ADC" reads from the most recent full DMA buffer.
+     */
+    if (!HL_ADC_IsBufferReady())
     {
-        return HAL_BOARD_ERROR;
+        return HAL_BOARD_ERROR_NOT_READY;
     }
 
-    /* Wait for conversion (100ms timeout) */
-    if (HAL_ADC_PollForConversion(&hadc1, 100) != HAL_OK)
+    uint16_t *buffer = HL_ADC_GetBuffer();
+    if (buffer == NULL)
     {
-        HAL_ADC_Stop(&hadc1);
-        return HAL_BOARD_ERROR;
+        return HAL_BOARD_ERROR_NOT_READY;
     }
 
-    /* Get value */
-    *value = (uint16_t)HAL_ADC_GetValue(&hadc1);
-    
-    HAL_ADC_Stop(&hadc1);
+    uint32_t sum = 0U;
+    for (uint32_t i = 0U; i < ADC_BUFFER_SIZE; ++i)
+    {
+        sum += buffer[i];
+    }
+
+    *value = (uint16_t)(sum / ADC_BUFFER_SIZE);
     return HAL_BOARD_OK;
 }
 
