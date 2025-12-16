@@ -31,6 +31,10 @@ COMMAND_MAP = {
     "conn": "CMD:CONN",
     "cal": "CMD:CAL",
     "meas": "CMD:MEAS",
+    "manual-on": "CMD:MANUAL:ON",
+    "manual-off": "CMD:MANUAL:OFF",
+    "manual_on": "CMD:MANUAL:ON",
+    "manual_off": "CMD:MANUAL:OFF",
     "btn-press": "CMD:BTN:PRESS",
     "btn-release": "CMD:BTN:RELEASE",
     "leds": "CMD:LEDS",
@@ -130,10 +134,81 @@ def dispatch_command(line: str, client: SerialClient) -> None:
         client.send_line(mapped)
         return
 
+    parts = line.split()
+    if not parts:
+        return
+
+    cmd = parts[0]
+    args = parts[1:]
+
+    if cmd == "hal-init":
+        client.send_line("CMD:HAL:INIT")
+        return
+
+    if cmd == "hal-led-set" and len(args) == 2:
+        led_id, state = args
+        client.send_line(f"CMD:HAL:LED:SET:{led_id}:{state}")
+        return
+
+    if cmd == "hal-led-get" and len(args) == 1:
+        client.send_line(f"CMD:HAL:LED:GET:{args[0]}")
+        return
+
+    if cmd == "hal-led-toggle" and len(args) == 1:
+        client.send_line(f"CMD:HAL:LED:TOGGLE:{args[0]}")
+        return
+
+    if cmd == "hal-adc-read" and len(args) == 0:
+        client.send_line("CMD:HAL:ADC:READ")
+        return
+
+    if cmd == "hal-adc-raw" and len(args) == 0:
+        client.send_line("CMD:HAL:ADC:RAW")
+        return
+
+    if cmd == "hal-dac-set" and len(args) == 2:
+        ch, voltage = args
+        client.send_line(f"CMD:HAL:DAC:SET:{ch}:{voltage}")
+        return
+
+    if cmd == "hal-dac-raw" and len(args) == 2:
+        ch, raw = args
+        client.send_line(f"CMD:HAL:DAC:RAW:{ch}:{raw}")
+        return
+
+    if cmd == "hal-gain-set" and len(args) == 1:
+        client.send_line(f"CMD:HAL:GAIN:SET:{args[0]}")
+        return
+
+    if cmd == "hal-gain-get" and len(args) == 0:
+        client.send_line("CMD:HAL:GAIN:GET")
+        return
+
+    if cmd == "hal-btn-read" and len(args) == 0:
+        client.send_line("CMD:HAL:BTN:READ")
+        return
+
+    if cmd == "hal-nina-rst" and len(args) == 1:
+        client.send_line(f"CMD:HAL:NINA:RST:{args[0]}")
+        return
+
+    if cmd == "hal-nina-stop" and len(args) == 1:
+        client.send_line(f"CMD:HAL:NINA:STOP:{args[0]}")
+        return
+
+    if cmd == "hal-lcd-set" and len(args) >= 2:
+        line_idx = args[0]
+        text = " ".join(args[1:])
+        client.send_line(f"CMD:HAL:LCD:SET:{line_idx}:{text}")
+        return
+
     print(
         "Unknown command. Supported: "
         + ", ".join(sorted(COMMAND_MAP.keys()))
-        + ", send <RAW>, exit",
+        + ", hal-init, hal-led-set <id> <0/1>, hal-led-get <id>, hal-led-toggle <id>,"
+        + " hal-adc-read, hal-adc-raw, hal-dac-set <ch> <voltage>, hal-dac-raw <ch> <value>,"
+        + " hal-gain-set <level>, hal-gain-get, hal-btn-read, hal-nina-rst <0/1>, hal-nina-stop <0/1>,"
+        + " hal-lcd-set <0/1> <text>, send <RAW>, exit",
     )
 
 

@@ -70,6 +70,9 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+/* Set to 1 when SystemClock_Config() falls back to MSI because HSE/PLL failed. */
+volatile uint8_t g_clock_fallback_active = 0U;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -218,6 +221,11 @@ int main(void)
 
   /* Turn on Init LED to indicate successful initialization */
   HL_GPIO_Write(HL_GPIO_LED_INIT, HL_GPIO_HIGH);
+
+  /* Hardware-visible alarm: external clock failed, running on MSI fallback. */
+  if (g_clock_fallback_active) {
+    (void)HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_HIGH);
+  }
 
   /* ========================================================================== */
   /*                            TEST FUNCTIONS                                  */
@@ -436,6 +444,7 @@ void SystemClock_Config(void)
      * report it over USART2 and fall back to MSI so we can still talk to the PC.
      */
     uart2_panic_print("RCC_OSC");
+    g_clock_fallback_active = 1U;
 
     RCC_OscInitStruct = (RCC_OscInitTypeDef){0};
     RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_MSI;
@@ -462,6 +471,7 @@ void SystemClock_Config(void)
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
   {
     uart2_panic_print("RCC_CLK");
+    g_clock_fallback_active = 1U;
 
     /* If PLL clock tree can't be applied (e.g. because we fell back to MSI),
      * switch SYSCLK to MSI.
@@ -472,11 +482,22 @@ void SystemClock_Config(void)
       Error_Handler();
     }
   }
-  HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
-
-  /** Enables the Clock Security System
-  */
-  HAL_RCC_EnableCSS();
+  /* When HSE is missing/broken and we fall back to MSI, enabling CSS will
+   * immediately trigger NMI and trap the firmware. Keep the device controllable
+   * by disabling CSS and not routing HSE to MCO.
+   */
+  if (g_clock_fallback_active) {
+    HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_NOCLOCK, RCC_MCODIV_1);
+    /* Some HAL versions don't expose a disable function; clear the bit directly. */
+#if defined(__HAL_RCC_HSE_CSS_DISABLE)
+    __HAL_RCC_HSE_CSS_DISABLE();
+#elif defined(RCC_CR_CSSON)
+    CLEAR_BIT(RCC->CR, RCC_CR_CSSON);
+#endif
+  } else {
+    HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
+    HAL_RCC_EnableCSS();
+  }
 }
 
 /**

@@ -10,6 +10,7 @@
 #include "bt_manager.h"
 #include "debug_log.h"
 #include "rf_measure.h"
+#include "usb_cdc_bridge.h"
 
 #define FSM_EVENT_QUEUE_SIZE 8U
 #define CAL_BLINK_PERIOD_TICKS 4U
@@ -36,6 +37,7 @@ static void FSM_TransitionTo(AppState_t new_state, const char *reason);
 static void FSM_OnEnter(AppState_t new_state);
 static void FSM_HandleInit(void);
 static void FSM_HandleIdle(void);
+static void FSM_HandleManual(void);
 static void FSM_HandleCalibration(void);
 static void FSM_HandleMeasureSearch(void);
 static void FSM_HandleCalculation(void);
@@ -88,6 +90,20 @@ static void handle_bt_event(BT_Event_t evt)
     case BT_EVENT_MEAS:
         enqueue_event(FSM_EVENT_BT_MEAS);
         Debug_LogEvent("BT", "MEAS");
+        break;
+    case BT_EVENT_MANUAL_ON:
+        Debug_LogEvent("BT", "MAN_ON");
+        /* Allow dropping into manual mode from any state. */
+        FSM_TransitionTo(STATE_MANUAL_OPERATION, "bt_man_on");
+        break;
+    case BT_EVENT_MANUAL_OFF:
+        Debug_LogEvent("BT", "MAN_OFF");
+        if (s_state == STATE_MANUAL_OPERATION) {
+            BT_SendStatus("MANUAL_OFF");
+            FSM_TransitionTo(STATE_IDLE, "bt_man_off");
+        } else {
+            BT_SendStatus("MANUAL_NOT_ACTIVE");
+        }
         break;
     default:
         break;
@@ -149,6 +165,8 @@ static void FSM_TransitionTo(AppState_t new_state, const char *reason)
 
 static void FSM_OnEnter(AppState_t new_state)
 {
+    BT_SetManualMode((new_state == STATE_MANUAL_OPERATION) ? 1U : 0U);
+
     switch (new_state) {
     case STATE_INIT:
         s_queue_head = 0U;
@@ -190,6 +208,25 @@ static void FSM_OnEnter(AppState_t new_state)
         s_result_pending = 0U;
         s_cal_blink_ticks = 0U;
         FSM_UpdateLCD("IDLE", s_calibration.is_valid ? "Ready" : "Need CAL");
+        break;
+
+    case STATE_MANUAL_OPERATION:
+        /* Safety: stop any measurement-related outputs immediately. */
+        BSP_RF_EnableExcitation(0U);
+        BSP_RF_SetOpAmpEnable(0U);
+        s_calibration_pending = 0U;
+        s_measurement_pending = 0U;
+        s_result_pending = 0U;
+        s_cal_blink_ticks = 0U;
+        s_cal_led_level = 0U;
+
+        BSP_LED_Set(LED_STATUS, 1U);
+        BSP_LED_Set(LED_MEAS, 0U);
+        BSP_LED_Set(LED_EXCITE, 0U);
+        BSP_LED_Set(LED_ERROR, 0U);
+
+        BT_SendStatus("MANUAL_ON");
+        FSM_UpdateLCD("MANUAL", "HAL cmds OK");
         break;
 
     case STATE_CALIBRATION:
@@ -284,6 +321,33 @@ static void FSM_HandleIdle(void)
         } else {
             FSM_StartCalibration("btn_cal");
         }
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void FSM_HandleManual(void)
+{
+    const FSM_Event_t evt = dequeue_event();
+    switch (evt) {
+    case FSM_EVENT_BT_CONN:
+        BT_SendStatus("MANUAL");
+        break;
+
+    case FSM_EVENT_BT_MANUAL_OFF:
+        BT_SendStatus("MANUAL_OFF");
+        FSM_TransitionTo(STATE_IDLE, "bt_man_off");
+        break;
+
+    case FSM_EVENT_BT_MANUAL_ON:
+        BT_SendStatus("MANUAL");
+        break;
+
+    case FSM_EVENT_BT_CAL:
+    case FSM_EVENT_BT_MEAS:
+        BT_SendStatus("MANUAL_ACTIVE");
         break;
 
     default:
@@ -426,6 +490,7 @@ static uint8_t FSM_IsMeasurementValid(const MeasurementResult_t *result)
 
 void FSM_RunOnce(void)
 {
+    PC_HostBridge_Poll();
     BT_MockPump();
     handle_bt_event(BT_PopEvent());
     process_button();
@@ -437,6 +502,10 @@ void FSM_RunOnce(void)
 
     case STATE_IDLE:
         FSM_HandleIdle();
+        break;
+
+    case STATE_MANUAL_OPERATION:
+        FSM_HandleManual();
         break;
 
     case STATE_CALIBRATION:

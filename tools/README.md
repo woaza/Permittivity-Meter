@@ -22,16 +22,29 @@ python tools/pc_cli.py --port COM7
 On reset/power-up the firmware emits `STAT:BOOT_V2` once (a quick sanity check
 that the USART2→ST-LINK VCP TX path is working).
 
+If the firmware had to fall back to MSI because the external clock failed, it will also emit
+`STAT:UART_RX:POLL` to indicate the RX path is being serviced via polling (not interrupts).
+
 Supported interactive commands:
 
 - `conn` – send `CMD:CONN`, expect `STAT:RDY`
 - `cal` – run calibration (`CMD:CAL`)
 - `meas` – trigger snow measurement (`CMD:MEAS`)
+- `manual-on` / `manual-off` – enter/exit manual mode (`CMD:MANUAL:*`) (aliases: `manual_on`, `manual_off`)
 - `btn-press` / `btn-release` – synthesize button edges via `CMD:BTN:*`
 - `leds` – request current LED state snapshot (`CMD:LEDS`)
 - `lcd` – dump both LCD lines (`CMD:LCD`)
 - `log` – dump the buffered debug log entries (`CMD:LOG`)
 - `trace` – stream the latest RF ADC sweep samples (`CMD:TRACE`)
+- `hal-init` – init the HAL board module (`CMD:HAL:INIT`) (requires manual mode)
+- `hal-*` shortcuts – convenience wrappers for `CMD:HAL:*` (requires manual mode):
+	- `hal-led-set <id> <0/1>`, `hal-led-get <id>`, `hal-led-toggle <id>`
+	- `hal-adc-read`, `hal-adc-raw`
+	- `hal-dac-set <ch> <voltage>`, `hal-dac-raw <ch> <value>`
+	- `hal-gain-set <level>`, `hal-gain-get`
+	- `hal-btn-read`
+	- `hal-nina-rst <0/1>`, `hal-nina-stop <0/1>`
+	- `hal-lcd-set <0/1> <text>`
 - `send <RAW>` – transmit an arbitrary line verbatim
 - `exit` / `quit` – leave the CLI
 
@@ -79,8 +92,9 @@ python tools/pc_ui.py --port COM4
 ```
 
 The UI automatically issues `CMD:CONN` on connect, exposes buttons for
-`CAL`, `MEAS`, trace capture, button press/release, and provides a raw
-Bluetooth-style send box. The ADC/DAC confirmation panel updates with the
+`CAL`, `MEAS`, manual mode toggle, trace capture, button press/release, and provides a raw
+Bluetooth-style send box. The HAL quick actions (`HAL Init` / `HAL ADC`) require manual mode.
+The ADC/DAC confirmation panel updates with the
 latest `DAT:RES` frame plus the minimum amplitude found in the current RF
 trace so you can quickly sanity-check values. LED, LCD, and log panes now
 refresh automatically every couple of seconds so state changes pushed by the

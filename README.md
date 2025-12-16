@@ -55,6 +55,29 @@ stateDiagram-v2
 
 ---
 
+## Bring-up Notes (Dec 2025)
+
+On some custom boards the external HSE (e.g., a bare 20 MHz crystal) may fail to start. Historically this caused the firmware to hang inside `SystemClock_Config()`.
+
+The firmware now:
+
+- Emits explicit clock-failure tags over USART2 (ST-LINK VCP).
+- Falls back to MSI so the device stays controllable.
+- Uses a UART RX polling fallback when clock-fallback is active.
+
+Expected boot output in the clock-fallback scenario:
+
+```text
+STAT:ERR:RCC_OSC
+STAT:ERR:RCC_CLK
+STAT:UART_RX:POLL
+STAT:BOOT_V2
+```
+
+After that, `CMD:CONN` should respond with exactly one `STAT:RDY`.
+
+---
+
 ## 2. Hardware Configuration
 
 ### Pinout Configuration
@@ -244,7 +267,20 @@ These commands configure the internal mock engine when hardware is not available
 
 ### HAL Board Commands (Manual/Debug Hardware Control)
 
-These commands provide direct hardware control for manual testing and debugging. They bypass the FSM and directly manipulate hardware via HAL drivers.
+These commands provide direct hardware control for manual testing and debugging.
+
+To reduce the risk of accidentally toggling real hardware during normal measurement flows, `CMD:HAL:*` is **locked by default** and only accepted while the firmware is in **Manual Mode**.
+
+#### Manual Mode (Handbetrieb)
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:MANUAL:ON` | Enter `STATE_MANUAL_OPERATION` (disables excitation/op-amp, enables HAL commands). | `STAT:MANUAL_ON_REQ`, then `STAT:MANUAL_ON` |
+| `CMD:MANUAL:OFF` | Leave manual mode and return to idle. | `STAT:MANUAL_OFF_REQ`, then `STAT:MANUAL_OFF` |
+
+While manual mode is active, `CMD:CAL` / `CMD:MEAS` are rejected with `STAT:MANUAL_ACTIVE`.
+
+If you send a `CMD:HAL:*` command while manual mode is not active, the device responds with `STAT:HAL_LOCKED`.
 
 #### LED Control
 
@@ -277,6 +313,12 @@ These commands provide direct hardware control for manual testing and debugging.
 | `CMD:HAL:DAC:RAW:<ch>:<value>` | Set DAC raw 12-bit value (0-4095) | `STAT:HAL_DAC_<ch>:<value>` |
 
 *DAC Channels: 0=FREQ_TUNE (PA4), 1=Q_FACTOR (PA5)*
+
+#### LCD (Simulated)
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:LCD:SET:<line>:<text>` | Overwrite LCD line buffer (0/1) with text (padded/truncated). | `STAT:HAL_LCD_L<line>_OK` |
 
 #### RF Gain
 

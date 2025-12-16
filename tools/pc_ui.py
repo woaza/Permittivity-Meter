@@ -43,12 +43,16 @@ CMD = {
     "connect": "CMD:CONN",
     "cal": "CMD:CAL",
     "meas": "CMD:MEAS",
+    "manual_on": "CMD:MANUAL:ON",
+    "manual_off": "CMD:MANUAL:OFF",
     "btn_press": "CMD:BTN:PRESS",
     "btn_release": "CMD:BTN:RELEASE",
     "lcd": "CMD:LCD",
     "leds": "CMD:LEDS",
     "log": "CMD:LOG",
     "trace": "CMD:TRACE",
+    "hal_init": "CMD:HAL:INIT",
+    "hal_adc": "CMD:HAL:ADC:READ",
 }
 
 AUTO_REFRESH_INTERVALS = {
@@ -164,6 +168,8 @@ def build_layout() -> list[list[sg.Element]]:
     control_frame = [
         [sg.Button("Handshake", key="-CMD-CONN-"), sg.Button("Calibrate", key="-CMD-CAL-"),
          sg.Button("Measure", key="-CMD-MEAS-"), sg.Button("Trace", key="-CMD-TRACE-")],
+        [sg.Button("Manual ON", key="-CMD-MANUAL-ON-"), sg.Button("Manual OFF", key="-CMD-MANUAL-OFF-"),
+         sg.Button("HAL Init", key="-CMD-HAL-INIT-"), sg.Button("HAL ADC", key="-CMD-HAL-ADC-")],
         [sg.Button("Refresh LCD", key="-CMD-LCD-"), sg.Button("Refresh LEDs", key="-CMD-LEDS-"),
          sg.Button("Pull Logs", key="-CMD-LOG-"), sg.Button("Reset Device", key="-CMD-RESET-")],
         [sg.Button("Button Press", key="-CMD-BTN-PRESS-"), sg.Button("Button Release", key="-CMD-BTN-REL-")],
@@ -309,6 +315,14 @@ def run_ui(args: argparse.Namespace) -> int:
             send_command(state, CMD["cal"])
         elif event == "-CMD-MEAS-":
             send_command(state, CMD["meas"])
+        elif event == "-CMD-MANUAL-ON-":
+            send_command(state, CMD["manual_on"])
+        elif event == "-CMD-MANUAL-OFF-":
+            send_command(state, CMD["manual_off"])
+        elif event == "-CMD-HAL-INIT-":
+            send_command(state, CMD["hal_init"])
+        elif event == "-CMD-HAL-ADC-":
+            send_command(state, CMD["hal_adc"])
         elif event == "-CMD-TRACE-":
             state.reset_measurements()
             window["-MEAS-RESULT-"].update(state.last_measure)

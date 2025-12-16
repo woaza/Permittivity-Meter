@@ -25,6 +25,7 @@ typedef struct {
 typedef enum {
     STATE_INIT = 0,
     STATE_IDLE,
+    STATE_MANUAL_OPERATION,
     STATE_CALIBRATION,
     STATE_MEASURE_SEARCH,
     STATE_CALCULATION,

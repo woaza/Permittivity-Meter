@@ -15,6 +15,7 @@
 #include "usb_cdc_bridge.h"
 
 static BT_Event_t s_pending_event = BT_EVENT_NONE;
+static uint8_t s_manual_mode_enabled = 0U;
 
 static void output_line(const char *line)
 {
@@ -445,6 +446,36 @@ static bool handle_hal_btn_command(const char *payload)
     return false;
 }
 
+static bool handle_hal_lcd_command(const char *payload)
+{
+    /* CMD:HAL:LCD:SET:<line>:<text> */
+    if (strncmp(payload, "SET:", 4) == 0) {
+        uint32_t line = 0U;
+        const char *args = payload + 4;
+
+        if (!parse_uint_arg(args, &line)) {
+            BT_SendStatus("HAL_LCD_ERR");
+            return true;
+        }
+
+        const char *colon = strchr(args, ':');
+        if (colon == NULL) {
+            BT_SendStatus("HAL_LCD_ERR");
+            return true;
+        }
+
+        BSP_LCD_DisplayStringAt((uint8_t)line, colon + 1);
+
+        char resp[32];
+        snprintf(resp, sizeof(resp), "HAL_LCD_L%u_OK", (unsigned)line);
+        BT_SendStatus(resp);
+        return true;
+    }
+
+    BT_SendStatus("HAL_LCD_ERR");
+    return true;
+}
+
 static bool handle_hal_nina_command(const char *payload)
 {
     /* CMD:HAL:NINA:RST:<state>  (0=reset active, 1=run) */
@@ -488,6 +519,11 @@ static bool handle_hal_command(const char *buffer)
         return false;
     }
 
+    if (!s_manual_mode_enabled) {
+        BT_SendStatus("HAL_LOCKED");
+        return true;
+    }
+
     const char *payload = buffer + 8;
     
     /* Route to sub-handlers */
@@ -514,6 +550,10 @@ static bool handle_hal_command(const char *buffer)
     if (strncmp(payload, "NINA:", 5) == 0) {
         return handle_hal_nina_command(payload + 5);
     }
+
+    if (strncmp(payload, "LCD:", 4) == 0) {
+        return handle_hal_lcd_command(payload + 4);
+    }
     
     /* CMD:HAL:INIT - Initialize HAL Board */
     if (strncmp(payload, "INIT", 4) == 0) {
@@ -531,6 +571,7 @@ void BT_Manager_Init(void)
     MockBoard_Init();
     PC_HostBridge_Init();
     s_pending_event = BT_EVENT_NONE;
+    s_manual_mode_enabled = 0U;
     Debug_LogDriver("BT", "init");
 
     /* Proof-of-flash / proof-of-TX for the PC host bridge. */
@@ -546,8 +587,6 @@ void BT_ProcessIncoming(const char *buffer)
     if (strncmp(buffer, "CMD:CONN", 8) == 0) {
         push_event(BT_EVENT_CONN);
         Debug_LogDriver("BT_RX", "CMD:CONN");
-        /* Handshake ack so the PC can confirm the UART path is alive. */
-        BT_SendStatus("RDY");
     } else if (strncmp(buffer, "CMD:CAL", 7) == 0) {
         push_event(BT_EVENT_CAL);
         Debug_LogDriver("BT_RX", "CMD:CAL");
@@ -568,6 +607,14 @@ void BT_ProcessIncoming(const char *buffer)
         handle_mock_command(buffer);
     } else if (strncmp(buffer, "CMD:HAL", 7) == 0) {
         handle_hal_command(buffer);
+    } else if (strncmp(buffer, "CMD:MANUAL:ON", 13) == 0) {
+        push_event(BT_EVENT_MANUAL_ON);
+        Debug_LogDriver("BT_RX", "CMD:MANUAL:ON");
+        BT_SendStatus("MANUAL_ON_REQ");
+    } else if (strncmp(buffer, "CMD:MANUAL:OFF", 14) == 0) {
+        push_event(BT_EVENT_MANUAL_OFF);
+        Debug_LogDriver("BT_RX", "CMD:MANUAL:OFF");
+        BT_SendStatus("MANUAL_OFF_REQ");
     } else {
         Debug_LogDriver("BT_RX", "IGN");
         return;
@@ -597,6 +644,16 @@ void BT_SendResult(MeasurementResult_t result)
              result.epsilon_imag,
              result.snow_density);
     output_line(buffer);
+}
+
+void BT_SetManualMode(uint8_t enabled)
+{
+    s_manual_mode_enabled = enabled ? 1U : 0U;
+}
+
+uint8_t BT_IsManualMode(void)
+{
+    return s_manual_mode_enabled;
 }
 
 void BT_MockEnqueueCommand(const char *cmd)

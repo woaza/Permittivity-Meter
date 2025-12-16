@@ -12,6 +12,9 @@
 static char s_rx_buffer[RX_BUFFER_SIZE];
 static uint32_t s_rx_index = 0;
 
+static uint8_t s_use_polling_rx = 0U;
+static uint8_t s_rx_mode_reported = 0U;
+
 #ifndef UNIT_TESTS
 #if defined(__has_include)
 #  if __has_include("main.h")
@@ -42,12 +45,34 @@ extern UART_HandleTypeDef huart2;
 #define UART_BRIDGE_HANDLE huart2
 #endif
 
+extern volatile uint8_t g_clock_fallback_active;
+
 static uint8_t s_uart_rx_byte;
+
+static void report_rx_mode_once(void)
+{
+    if (s_rx_mode_reported) {
+        return;
+    }
+    s_rx_mode_reported = 1U;
+    if (s_use_polling_rx) {
+        PC_HostBridge_Send("STAT:UART_RX:POLL");
+    } else {
+        PC_HostBridge_Send("STAT:UART_RX:IT");
+    }
+}
 
 static void start_uart_rx_interrupt(void)
 {
+    /* Clear sticky error flags before (re)starting RX. */
+    __HAL_UART_CLEAR_OREFLAG(&UART_BRIDGE_HANDLE);
+    __HAL_UART_CLEAR_NEFLAG(&UART_BRIDGE_HANDLE);
+    __HAL_UART_CLEAR_FEFLAG(&UART_BRIDGE_HANDLE);
+    __HAL_UART_CLEAR_PEFLAG(&UART_BRIDGE_HANDLE);
+
     if (HAL_UART_Receive_IT(&UART_BRIDGE_HANDLE, &s_uart_rx_byte, 1U) != HAL_OK) {
         Debug_LogDriver("UART", "rx_fail");
+        s_use_polling_rx = 1U;
     }
 }
 #endif
@@ -57,10 +82,43 @@ void PC_HostBridge_Init(void)
     memset(s_rx_buffer, 0, sizeof(s_rx_buffer));
     s_rx_index = 0;
 #ifndef UNIT_TESTS
-    start_uart_rx_interrupt();
+    s_rx_mode_reported = 0U;
+    /* When clock fallback is active, keep the RX path as simple as possible:
+     * avoid IRQ RX and use polling from the main loop.
+     */
+    s_use_polling_rx = g_clock_fallback_active ? 1U : 0U;
+    if (!s_use_polling_rx) {
+        start_uart_rx_interrupt();
+    }
+    report_rx_mode_once();
     Debug_LogDriver("UART", "init");
 #else
     Debug_LogDriver("HOST", "init");
+#endif
+}
+
+void PC_HostBridge_Poll(void)
+{
+#ifndef UNIT_TESTS
+    if (!s_use_polling_rx) {
+        return;
+    }
+
+    /* Drain a small amount per call to avoid starving the FSM. */
+    for (uint32_t budget = 0U; budget < 32U; ++budget) {
+        if (__HAL_UART_GET_FLAG(&UART_BRIDGE_HANDLE, UART_FLAG_RXNE) == RESET) {
+            break;
+        }
+
+        /* Reading RDR clears RXNE. */
+        const uint8_t ch = (uint8_t)(UART_BRIDGE_HANDLE.Instance->RDR & 0xFFU);
+        PC_HostBridge_OnRx(&ch, 1U);
+
+        /* Clear ORE if it occurred (can happen if host sent while RX wasn't armed). */
+        if (__HAL_UART_GET_FLAG(&UART_BRIDGE_HANDLE, UART_FLAG_ORE) != RESET) {
+            __HAL_UART_CLEAR_OREFLAG(&UART_BRIDGE_HANDLE);
+        }
+    }
 #endif
 }
 

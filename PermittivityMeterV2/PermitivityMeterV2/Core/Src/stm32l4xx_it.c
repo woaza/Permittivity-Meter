@@ -59,6 +59,7 @@ extern DMA_HandleTypeDef hdma_adc1;
 extern DMA_HandleTypeDef hdma_dac_ch2;
 extern DMA_HandleTypeDef hdma_dac_ch1;
 extern UART_HandleTypeDef huart2;
+extern volatile uint8_t g_clock_fallback_active;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -76,9 +77,11 @@ void NMI_Handler(void)
   /* USER CODE END NonMaskableInt_IRQn 0 */
   HAL_RCC_NMI_IRQHandler();
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
-   while (1)
-  {
-  }
+  /* Do not trap here: CSS NMI can occur when HSE is missing/broken.
+   * Latch the condition and keep running so the device remains controllable.
+   */
+  g_clock_fallback_active = 1U;
+  HAL_GPIO_WritePin(ERR_LED_GPIO_Port, ERR_LED_Pin, GPIO_PIN_SET);
   /* USER CODE END NonMaskableInt_IRQn 1 */
 }
 
