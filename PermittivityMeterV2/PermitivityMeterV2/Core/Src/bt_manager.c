@@ -19,7 +19,12 @@
 
 #include "stm32l4xx_hal.h"
 
-static BT_Event_t s_pending_event = BT_EVENT_NONE;
+#define BT_EVENT_QUEUE_SIZE 8U
+
+static BT_Event_t s_event_queue[BT_EVENT_QUEUE_SIZE];
+static uint8_t s_evt_head = 0U;
+static uint8_t s_evt_tail = 0U;
+static uint8_t s_evt_count = 0U;
 static uint8_t s_manual_mode_enabled = 0U;
 
 static void output_line(const char *line);
@@ -97,7 +102,19 @@ static void output_line(const char *line)
 
 static void push_event(BT_Event_t evt)
 {
-    s_pending_event = evt;
+    if (evt == BT_EVENT_NONE) {
+        return;
+    }
+    if (s_evt_count >= BT_EVENT_QUEUE_SIZE) {
+        /* Drop oldest to keep most recent commands. */
+        s_evt_head = (uint8_t)((s_evt_head + 1U) % BT_EVENT_QUEUE_SIZE);
+        --s_evt_count;
+        Debug_LogEvent("BT", "evt_ovf");
+    }
+
+    s_event_queue[s_evt_tail] = evt;
+    s_evt_tail = (uint8_t)((s_evt_tail + 1U) % BT_EVENT_QUEUE_SIZE);
+    ++s_evt_count;
 }
 
 static void handle_button_command(const char *buffer)
@@ -758,9 +775,52 @@ void BT_Manager_Init(void)
 {
     MockBoard_Init();
     PC_HostBridge_Init();
-    s_pending_event = BT_EVENT_NONE;
+    s_evt_head = 0U;
+    s_evt_tail = 0U;
+    s_evt_count = 0U;
     s_manual_mode_enabled = 0U;
     Debug_LogDriver("BT", "init");
+
+#ifndef UNIT_TESTS
+    {
+        char cause[64];
+        size_t off = 0U;
+        off += (size_t)snprintf(cause + off, sizeof(cause) - off, "RESET_CAUSE:");
+
+        uint8_t any = 0U;
+        if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST) != RESET) {
+            off += (size_t)snprintf(cause + off, sizeof(cause) - off, "%sIWDG", any ? "|" : "");
+            any = 1U;
+        }
+        if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST) != RESET) {
+            off += (size_t)snprintf(cause + off, sizeof(cause) - off, "%sWWDG", any ? "|" : "");
+            any = 1U;
+        }
+        if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST) != RESET) {
+            off += (size_t)snprintf(cause + off, sizeof(cause) - off, "%sSW", any ? "|" : "");
+            any = 1U;
+        }
+        if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST) != RESET) {
+            off += (size_t)snprintf(cause + off, sizeof(cause) - off, "%sPIN", any ? "|" : "");
+            any = 1U;
+        }
+        if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST) != RESET) {
+            off += (size_t)snprintf(cause + off, sizeof(cause) - off, "%sBOR", any ? "|" : "");
+            any = 1U;
+        }
+        if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST) != RESET) {
+            off += (size_t)snprintf(cause + off, sizeof(cause) - off, "%sLPWR", any ? "|" : "");
+            any = 1U;
+        }
+
+        if (!any) {
+            (void)snprintf(cause + off, sizeof(cause) - off, "UNKNOWN");
+        }
+
+        BT_SendStatus(cause);
+        __HAL_RCC_CLEAR_RESET_FLAGS();
+    }
+#endif
 
     /* Proof-of-flash / proof-of-TX for the PC host bridge. */
     BT_SendStatus("BOOT_V2");
@@ -822,8 +882,13 @@ void BT_ProcessIncoming(const char *buffer)
 
 BT_Event_t BT_PopEvent(void)
 {
-    BT_Event_t evt = s_pending_event;
-    s_pending_event = BT_EVENT_NONE;
+    if (s_evt_count == 0U) {
+        return BT_EVENT_NONE;
+    }
+
+    const BT_Event_t evt = s_event_queue[s_evt_head];
+    s_evt_head = (uint8_t)((s_evt_head + 1U) % BT_EVENT_QUEUE_SIZE);
+    --s_evt_count;
     return evt;
 }
 

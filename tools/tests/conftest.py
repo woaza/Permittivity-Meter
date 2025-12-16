@@ -17,6 +17,13 @@ if str(TOOLS_DIR) not in sys.path:
 from pc_cli import DEFAULT_BAUD, DEFAULT_TIMEOUT, SerialClient, SerialConfig  # noqa: E402
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "hardware: tests that require a connected STM32 board via serial port",
+    )
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--port",

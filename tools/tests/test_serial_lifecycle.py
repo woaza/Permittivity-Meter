@@ -54,6 +54,11 @@ class SerialTranscript:
 class TestSerialLifecycle(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        if not LOG_PATH.exists():
+            raise unittest.SkipTest(
+                f"Missing lifecycle transcript fixture: {LOG_PATH}. "
+                "Place a captured UART transcript (one line per frame) under tools/testdata/."
+            )
         cls.transcript = SerialTranscript.load(LOG_PATH)
 
     def test_status_handshake_sequence(self) -> None:

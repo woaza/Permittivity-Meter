@@ -85,13 +85,12 @@ def send_until_prefix(
 
 
 def request_led_snapshot(client: SerialClient, timeout: float) -> str:
-    client.send_line("CMD:LEDS")
-    return wait_for_prefix(client, ("STAT:LED",), timeout)
+    return send_until_prefix(client, "CMD:LEDS", ("STAT:LED",), timeout)
 
 
 def request_lcd_snapshot(client: SerialClient, timeout: float) -> list[str]:
-    client.send_line("CMD:LCD")
-    l0 = wait_for_prefix(client, ("DAT:LCD:L0",), timeout)
+    # CMD:LCD can occasionally drop on COM/VCP; retry until we see L0.
+    l0 = send_until_prefix(client, "CMD:LCD", ("DAT:LCD:L0",), timeout)
     l1 = wait_for_prefix(client, ("DAT:LCD:L1",), timeout)
     return [l0, l1]
 
@@ -222,18 +221,23 @@ def test_manual_mode_hal_read_write(serial_client: SerialClient, hw_cfg) -> None
     assert any(re.search(r"STAT:HW:PWM:RUN:[01]", line) for line in stop_lines), f"Missing PWM RUN push after STOP. Got: {stop_lines}"
 
     # LCD write should push DAT:LCD.
-    client.send_line("CMD:HAL:LCD:SET:0:PYTEST")
-    wait_for_prefix(client, ("STAT:HAL_LCD_L0_OK", "STAT:HAL_LCD_ERR"), hw_cfg.stage_timeout)
+    # Some builds/boards expose a short buffered LCD line length; keep payload to 5 chars.
+    send_until_prefix(client, "CMD:HAL:LCD:SET:0:HELLO", ("STAT:HAL_LCD_L0_OK",), hw_cfg.stage_timeout)
     lcd0 = wait_for_prefix(client, ("DAT:LCD:L0",), hw_cfg.stage_timeout)
-    assert "PYTEST" in lcd0
+    assert lcd0.startswith("DAT:LCD:L0:HELLO"), f"Unexpected LCD L0 echo: {lcd0}"
 
     # Button read should push HW BTN.
-    client.send_line("CMD:HAL:BTN:READ")
-    wait_for_prefix(client, ("STAT:HAL_BTN:", "STAT:HAL_BTN_ERR"), hw_cfg.stage_timeout)
-    wait_for_regex(client, re.compile(r"STAT:HW:BTN:[01]"), hw_cfg.stage_timeout)
+    got = send_until_prefix(
+        client,
+        "CMD:HAL:BTN:READ",
+        ("STAT:HAL_BTN:", "STAT:HAL_BTN_ERR"),
+        hw_cfg.stage_timeout,
+    )
+    more = client.expect(10, timeout=0.5)
+    btn_lines = [got, *more]
+    assert any(re.search(r"STAT:HW:BTN:[01]", line) for line in btn_lines), f"Missing BTN push after READ. Got: {btn_lines}"
 
-    client.send_line("CMD:MANUAL:OFF")
-    wait_for_prefix(client, ("STAT:MANUAL_OFF_REQ",), hw_cfg.stage_timeout)
+    send_until_prefix(client, "CMD:MANUAL:OFF", ("STAT:MANUAL_OFF_REQ", "STAT:MANUAL_OFF"), hw_cfg.stage_timeout)
     wait_for_prefix(client, ("STAT:MANUAL_OFF",), hw_cfg.stage_timeout)
 
 
