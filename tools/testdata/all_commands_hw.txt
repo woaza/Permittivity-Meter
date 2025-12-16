@@ -1,0 +1,98 @@
+# Full command-surface script for pc_cli.py
+# Intended for real hardware (COM port). Adjust wait times if needed.
+
+# Reset the MCU so the script starts from a known state.
+reset
+wait 5
+
+conn
+wait 0.5
+leds
+wait 0.5
+lcd
+wait 0.5
+log
+wait 0.5
+trace
+wait 0.5
+
+# Normal operation paths
+cal
+wait 2
+meas
+wait 10
+
+# Manual / hardware mode
+manual-on
+wait 1
+manual-on
+wait 1
+hal-init
+wait 5
+
+# LEDs: set/get/toggle
+hal-led-set 0 1
+wait 0.15
+hal-led-get 0
+wait 0.15
+hal-led-toggle 0
+wait 0.15
+hal-led-get 0
+wait 0.15
+
+# Gain
+hal-gain-set 0
+wait 0.15
+hal-gain-get
+wait 0.15
+hal-gain-set 3
+wait 0.15
+hal-gain-get
+wait 0.15
+
+# ADC
+hal-adc-raw
+wait 0.15
+hal-adc-read
+wait 0.15
+
+# DAC tuning
+hal-dac-set 0 1.23
+wait 0.2
+hal-dac-set 1 2.34
+wait 0.2
+
+# PWM excitation
+hal-pwm-freq 20000000
+wait 0.15
+hal-pwm-duty 50
+wait 0.15
+hal-pwm-start
+wait 0.2
+hal-pwm-get
+wait 0.2
+hal-pwm-stop
+wait 0.2
+
+# NINA controls
+hal-nina-rst 0
+wait 0.2
+hal-nina-rst 1
+wait 0.2
+hal-nina-stop 1
+wait 0.2
+hal-nina-stop 0
+wait 0.2
+
+# Button read
+hal-btn-read
+wait 0.2
+
+# LCD write (pushes DAT:LCD update)
+hal-lcd-set 0 HELLO
+wait 1
+hal-lcd-set 1 WORLD
+wait 1
+
+manual-off
+wait 1

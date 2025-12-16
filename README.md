@@ -19,39 +19,69 @@ The system moves through the following states to perform a measurement:
 ```mermaid
 stateDiagram-v2
     [*] --> STATE_INIT
-    STATE_INIT --> STATE_IDLE : Init Done
-    
-    STATE_IDLE --> STATE_CALIBRATION : CMD_CAL or Button (1st)
-    STATE_IDLE --> STATE_MEASURE_SEARCH : CMD_MEAS or Button (2nd)
-    
-    state STATE_CALIBRATION {
-        [*] --> CoarseSweep
-        CoarseSweep --> FineSweep
-        FineSweep --> StoreAirRef
-    }
-    
-    state STATE_MEASURE_SEARCH {
-        [*] --> FineSweepSnow
-        FineSweepSnow --> FindPeak
-    }
-    
-    STATE_CALIBRATION --> STATE_IDLE : Success
-    STATE_CALIBRATION --> STATE_ERROR : Fail
-    
-    STATE_MEASURE_SEARCH --> STATE_CALCULATION : Success
-    STATE_MEASURE_SEARCH --> STATE_ERROR : Fail
-    
-    STATE_CALCULATION --> STATE_IDLE : Result Sent
-    
-    STATE_ERROR --> STATE_INIT : Button Press
+    STATE_INIT --> STATE_IDLE : FSM_EVENT_INIT_DONE
+
+    %% IDLE entry points
+    STATE_IDLE --> STATE_CALIBRATION : CMD CAL or Button when no CAL
+    STATE_IDLE --> STATE_MEASURE_SEARCH : CMD MEAS or Button when CAL valid
+    STATE_IDLE --> STATE_IDLE : CMD CONN / STAT RDY
+
+    %% Manual mode is a safety override and can be entered from any state.
+    STATE_INIT --> STATE_MANUAL_OPERATION : CMD MANUAL ON
+    STATE_IDLE --> STATE_MANUAL_OPERATION : CMD MANUAL ON
+    STATE_CALIBRATION --> STATE_MANUAL_OPERATION : CMD MANUAL ON
+    STATE_MEASURE_SEARCH --> STATE_MANUAL_OPERATION : CMD MANUAL ON
+    STATE_ERROR --> STATE_MANUAL_OPERATION : CMD MANUAL ON
+
+    STATE_MANUAL_OPERATION --> STATE_IDLE : CMD MANUAL OFF
+    STATE_MANUAL_OPERATION --> STATE_MANUAL_OPERATION : CMD CONN / STAT MANUAL
+
+    %% Calibration
+    STATE_CALIBRATION --> STATE_IDLE : STAT CAL_OK
+    STATE_CALIBRATION --> STATE_ERROR : STAT ERR
+
+    %% Measurement
+    STATE_MEASURE_SEARCH --> STATE_IDLE : DAT RES ...
+    STATE_MEASURE_SEARCH --> STATE_ERROR : STAT ERR MEAS_INVALID
+
+    %% Error recovery
+    STATE_ERROR --> STATE_INIT : Button Press reset
+    STATE_ERROR --> STATE_INIT : CMD CONN forces re-init
 ```
 
-1. **STATE_INIT**: Initializes hardware (RF, UI, LCD, BT).
-2. **STATE_IDLE**: Waits for user input (Button) or remote commands (Bluetooth/PC).
-3. **STATE_CALIBRATION**: Sweeps the RF circuit with "Air" to find the baseline resonance.
-4. **STATE_MEASURE_SEARCH**: Sweeps with the material to find the shifted resonance.
-5. **STATE_CALCULATION**: Computes $\epsilon'$ and $\epsilon''$ using the frequency shift and Q-factor change.
-6. **STATE_ERROR**: Handles hardware faults or timeouts.
+1. **STATE_INIT**: Initializes modules (RF mock/BSP, UI, LCD, command protocol).
+2. **STATE_IDLE**: Waits for input (button) or `CMD:*` frames. `CMD:CONN` responds with `STAT:RDY` in this state.
+3. **STATE_CALIBRATION**: Runs `RF_PerformAirCalibration()` and returns `STAT:CAL_OK` or `STAT:ERR`.
+4. **STATE_MEASURE_SEARCH**: Runs `RF_PerformSnowMeasurement()` and returns `DAT:RES:...` or `STAT:ERR:MEAS_INVALID`.
+5. **STATE_MANUAL_OPERATION**: Safety/manual override. RF outputs are forced OFF. `CMD:HAL:*` is only accepted here.
+6. **STATE_ERROR**: Indicates a failure; button press (or `CMD:CONN`) re-initializes.
+
+Note: `CMD:CONN` is state-dependent: it returns `STAT:RDY` (IDLE/ERROR), `STAT:CAL` (CALIBRATION), `STAT:MEAS` (MEASURE_SEARCH), or `STAT:MANUAL` (MANUAL_OPERATION).
+
+Note: `STATE_CALCULATION` exists in the enum for future expansion, but the current V2 flow sends the result directly from the measurement state.
+
+---
+
+## Bring-up Notes (Dec 2025)
+
+On some custom boards the external HSE (e.g., a bare 20 MHz crystal) may fail to start. Historically this caused the firmware to hang inside `SystemClock_Config()`.
+
+The firmware now:
+
+- Falls back to MSI so the device stays controllable.
+- Uses DMA Receive-to-Idle on USART2 when RX DMA is configured (recommended). If clock-fallback is active and no RX DMA is available, it falls back to polling RX.
+
+Expected boot output (order) on USART2 (ST-LINK VCP):
+
+```text
+STAT:UART_RX:DMA_IDLE   (preferred)
+# or: STAT:UART_RX:IT_IDLE
+# or: STAT:UART_RX:POLL (only if clock-fallback is active and no RX DMA)
+STAT:RESET_CAUSE:<...>
+STAT:BOOT_V2
+```
+
+After that, `CMD:CONN` should respond with exactly one `STAT:RDY`.
 
 ---
 
@@ -90,38 +120,54 @@ stateDiagram-v2
 The project follows a layered architecture to ensure testability and separation of concerns.
 
 ```mermaid
-graph TD
-    subgraph "Application Layer (Pure Logic)"
-        FSM[fsm_main.c]
-        Math[math_model.c]
-        Meas[rf_measure.c]
-    end
-    
-    subgraph "BSP Layer (The Switch Point)"
-        BSP_RF[bsp_rf.c]
-        BSP_UI[bsp_ui.c]
-        BSP_BT[bt_manager.c]
-    end
-    
-    subgraph "Mock Layer (Simulation)"
-        MockBoard[mocks/mock_board.c]
-    end
+flowchart LR
+        PC["PC / Test Runner\n(USART2 / ST-LINK VCP)"]
 
-    subgraph "HAL Layer (Real Hardware)"
-        HAL_DAC[hl/hal_dac.c]
-        HAL_ADC[hl/hal_adc.c]
-        HAL_PWM[hl/hal_pwm.c]
-    end
-    
-    FSM --> Meas
-    Meas --> BSP_RF
-    
-    %% The Switch Point: Currently connected to Mock, needs to switch to HAL
-    BSP_RF -.->|Current: Mock Mode| MockBoard
-    BSP_RF -.->|TODO: Real Mode| HAL_DAC
-    BSP_RF -.->|TODO: Real Mode| HAL_ADC
-    
-    FSM --> BSP_UI
+        subgraph TRANSPORT["Transport + Line Assembly"]
+            U2["usb_cdc_bridge.c\nUSART2 RX: DMA Receive-to-Idle\nRX byte ring + RX line queue"]
+        end
+
+        subgraph PROTO["ASCII Protocol + Event Queues"]
+            BT["bt_manager.c\nBT_ProcessIncoming()\n- parses CMD:*\n- emits STAT:/DAT:\n- queues BT events"]
+            FSMQ["fsm_main.c\nFSM event queue\n(button + BT events)"]
+        end
+
+        subgraph APP["Application / Measurement"]
+            FSM["fsm_main.c\nAppState: INIT/IDLE/CAL/MEAS/MANUAL/ERROR"]
+            RF["rf_measure.c\ncalibration + measurement routines"]
+            TRACE["rf_trace.c\ntrace capture for CMD:TRACE"]
+        end
+
+        subgraph BSP["BSP Layer (Switch Point)"]
+            BSP_RF["bsp_rf.c\nRF front-end abstraction\n(Current: MOCK)"]
+            BSP_UI["bsp_ui.c\nButton + LEDs"]
+            BSP_LCD["bsp_lcd.c\nLCD buffer + I2C"]
+        end
+
+        subgraph MOCK["Mock / Test Support"]
+            MOCKBOARD["mocks/mock_board.c\nRF + BT loopback"]
+            DBG["debug_log.c\nring buffer for CMD:LOG"]
+        end
+
+        subgraph HAL["HAL Board (Manual Mode)"]
+            HLB["hl/hal_board.c\nDirect hardware control (CMD:HAL:*)"]
+        end
+
+        PC -->|"ASCII lines (\n terminated)"| U2
+        U2 -->|"Complete lines"| BT
+        BT -->|"BT events"| FSMQ
+        FSMQ --> FSM
+        FSM --> RF
+        FSM --> BSP_UI
+        FSM --> BSP_LCD
+        RF --> BSP_RF
+        TRACE --> BT
+
+        BSP_RF --> MOCKBOARD
+        BT --> DBG
+
+        BT -->|"STAT:/DAT: frames"| U2
+        BT --> HLB
 ```
 
 ### File Purpose & Hardware Interaction
@@ -162,8 +208,9 @@ The device operates autonomously using the onboard Button, LEDs, and LCD.
 | **IDLE** | `IDLE` | `Ready` (or `Need CAL`) | **Init (Green)** | Waiting for input. |
 | **CALIBRATION** | `CAL` | `Sweeping...` | **Meas (Blue)**, **Excite (Yellow)** | Finding "Air" resonance. |
 | **MEASURE** | `MEAS` | `Sampling...` | **Meas (Blue)**, **Excite (Yellow)** | Finding "Snow" resonance. |
-| **RESULT** | `RESULT` | `Sending...` | **Meas (Blue)** | Calculation complete. **TODO**: Display calculated value. |
 | **ERROR** | `ERROR` | `Check host` | **Error (Red)** | Hardware failure. |
+
+Note: there is no separate FSM state called "RESULT" in the current V2 flow. The result is emitted as `DAT:RES:...` and the FSM returns to **IDLE**.
 
 ---
 
@@ -198,8 +245,9 @@ The device operates autonomously using the onboard Button, LEDs, and LCD.
 
 * **Context**: The PC CLI (`tools/pc_cli.py`) should control the device exactly like the Bluetooth app.
 * **Tasks**:
-    1. [ ] **Verify Mirroring**: Ensure `bt_manager.c` sends all outputs to both UART4 (BT) and USART2 (USB).
-    2. [ ] **USB Input**: Ensure `usci_a_uart.c` forwards USB CDC data to the command parser.
+    1. [ ] **Add UART4/NINA transport**: Implement UART4 RX/TX for the NINA module and route its received lines into the same `BT_ProcessIncoming()` command parser.
+    2. [x] **USB Input**: USART2 RX is line-wise and feeds directly into the command parser via `usb_cdc_bridge.c` → `BT_ProcessIncoming()`.
+    3. [x] **Burst Safety**: Back-to-back commands are protected by a UART RX line queue and an FSM event queue.
 
 ### E. Hardware / Electronics
 
@@ -210,15 +258,18 @@ The device operates autonomously using the onboard Button, LEDs, and LCD.
 
 ## 6. CLI Command Reference
 
-The following ASCII commands are supported via **UART4 (Bluetooth)** and **USART2 (USB)**. All commands must be terminated with `\n` or `\r\n`.
+The following ASCII commands are supported on **USART2 (USB VCP)**. The same protocol is intended for **UART4/NINA (Bluetooth)**, but the UART4 transport is not wired up yet.
+
+All commands must be terminated with `\n` or `\r\n`.
 
 ### Control Commands
 
 | Command | Description | Response |
 | :--- | :--- | :--- |
-| `CMD:CONN` | Establishes connection. | `STAT:RDY` |
-| `CMD:CAL` | Triggers Calibration (Air Sweep). | `STAT:CAL` -> `STAT:CAL_OK` or `STAT:ERR` |
-| `CMD:MEAS` | Triggers Measurement (Snow Sweep). | `STAT:MEAS` -> `DAT:RES:...` or `STAT:ERR` |
+| `CMD:CONN` | Establishes connection / handshake. | State-dependent: `STAT:RDY` (IDLE/ERROR), `STAT:CAL` (CALIBRATION), `STAT:MEAS` (MEASURE_SEARCH), `STAT:MANUAL` (MANUAL_OPERATION) |
+| `CMD:RESET` | Reboot MCU (useful for tests). | `STAT:RESETTING` then reset |
+| `CMD:CAL` | Trigger Calibration (Air Sweep). | `STAT:CAL_REQ` → `STAT:CAL` → `STAT:CAL_OK` or `STAT:ERR` |
+| `CMD:MEAS` | Trigger Measurement (Snow Sweep). | `STAT:MEAS_REQ` → `STAT:MEAS` → `DAT:RES:...` or `STAT:ERR:MEAS_INVALID` (if measurement invalid). If no valid calibration exists, the request is rejected with `STAT:ERR`. |
 | `CMD:BTN:PRESS` | Simulates Button Press. | `STAT:BTN_PRESS` |
 | `CMD:BTN:RELEASE` | Simulates Button Release. | `STAT:BTN_REL` |
 
@@ -244,7 +295,36 @@ These commands configure the internal mock engine when hardware is not available
 
 ### HAL Board Commands (Manual/Debug Hardware Control)
 
-These commands provide direct hardware control for manual testing and debugging. They bypass the FSM and directly manipulate hardware via HAL drivers.
+These commands provide direct hardware control for manual testing and debugging.
+
+To reduce the risk of accidentally toggling real hardware during normal measurement flows, `CMD:HAL:*` is **locked by default** and only accepted while the firmware is in **Manual Mode**.
+
+#### Manual Mode (Handbetrieb)
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:MANUAL:ON` | Enter `STATE_MANUAL_OPERATION` (disables excitation/op-amp, enables HAL commands). | `STAT:MANUAL_ON_REQ`, then `STAT:MANUAL_ON` |
+| `CMD:MANUAL:OFF` | Leave manual mode and return to idle. | `STAT:MANUAL_OFF_REQ`, then `STAT:MANUAL_OFF` |
+
+While manual mode is active, `CMD:CAL` / `CMD:MEAS` are rejected with `STAT:MANUAL_ACTIVE`.
+
+If you send a `CMD:HAL:*` command while manual mode is not active, the device responds with `STAT:HAL_LOCKED`.
+
+If you send `CMD:MANUAL:OFF` while manual mode is not active, the device responds with `STAT:MANUAL_NOT_ACTIVE`.
+
+#### Push-Style ACK Frames (for UI updates)
+
+In addition to the legacy `STAT:HAL_*` responses, successful `CMD:HAL:*` operations also emit structured frames that include the applied values:
+
+- `STAT:HW:LED:<id>:<0/1>`
+- `STAT:HW:DAC:<ch>:V:<volts>` and `STAT:HW:DAC:<ch>:RAW:<value>`
+- `STAT:HW:ADC:V:<volts>` and `STAT:HW:ADC:RAW:<value>`
+- `STAT:HW:GAIN:<0..3>`
+- `STAT:HW:BTN:<0/1>`
+- `STAT:HW:NINA:RST:<0/1>` and `STAT:HW:NINA:STOP:<0/1>`
+- PWM: `STAT:HW:PWM:RUN:<0/1>`, `STAT:HW:PWM:FREQ:<hz>`, `STAT:HW:PWM:DUTY:<0..100>`
+
+This is intended so the PC GUI can update immediately from responses (without periodic polling).
 
 #### LED Control
 
@@ -277,6 +357,24 @@ These commands provide direct hardware control for manual testing and debugging.
 | `CMD:HAL:DAC:RAW:<ch>:<value>` | Set DAC raw 12-bit value (0-4095) | `STAT:HAL_DAC_<ch>:<value>` |
 
 *DAC Channels: 0=FREQ_TUNE (PA4), 1=Q_FACTOR (PA5)*
+
+#### LCD (Simulated)
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:LCD:SET:<line>:<text>` | Overwrite LCD line buffer (0/1) with text (padded/truncated). | `STAT:HAL_LCD_L<line>_OK` |
+
+In addition, the firmware pushes the updated buffer as `DAT:LCD:L<line>:<text>`.
+
+#### PWM / Excitation (TIM1 CH2 / PA9)
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:PWM:START` | Start PWM output. | `STAT:HAL_PWM_START_OK` + `STAT:HW:PWM:*` |
+| `CMD:HAL:PWM:STOP` | Stop PWM output. | `STAT:HAL_PWM_STOP_OK` + `STAT:HW:PWM:*` |
+| `CMD:HAL:PWM:GET` | Read PWM run/freq/duty. | `STAT:HAL_PWM_OK` + `STAT:HW:PWM:*` |
+| `CMD:HAL:PWM:FREQ:<hz>` | Set PWM frequency. | `STAT:HAL_PWM_FREQ_OK` + `STAT:HW:PWM:FREQ:<hz>` |
+| `CMD:HAL:PWM:DUTY:<0..100>` | Set PWM duty cycle. | `STAT:HAL_PWM_DUTY_OK` + `STAT:HW:PWM:DUTY:<pct>` |
 
 #### RF Gain
 
@@ -381,18 +479,4 @@ The mock generates a **parabolic dip (minimum)** to simulate the resonance circu
 * **RF State Readback**: There is currently no command (e.g., `CMD:RF:STAT`) to read the instantaneous state of the RF hardware (Excitation On/Off, Current DAC Voltage). This must be inferred from `CMD:TRACE` or `CMD:LEDS` (Excite LED).
 * ~~**Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing.~~ **DONE**: `CMD:HAL:*` commands now provide direct hardware control (see Section 6: HAL Board Commands) (STILL NEEDS TO BE TESTED).
 
-### latest Todos
-
-Umbauen auf real mode (siehe 3. Software architecture)
-und dann testen mit frequenzgenerator, im prinzip alles
-
-Handyapp und bluetooth funktion wird nicht implementiert, es wird nur das UART protokoll für die Messdaten implementiert, wenn die nächste gruppe dann weiter macht brauchen die nurnoch die app draufsetzen.
-
-Die Commandhandler für input/output sollen noch implementiert werden (Buttons ADC LED usw.) hal gpio und die todos
-
-Roman:
-Plakat machen
-OPV oder Pegelwandler dimensionieren 1V für benni
-Buck converter für 1v pegelwandler (vllt) Dimensionieren
-Boost converter für 33v umdimensionieren
-Dimensionierungen für meine Bauteile dokumentieren (Matlab)
+For the current actionable task list, see [ToDos.md](ToDos.md).

@@ -47,6 +47,8 @@ CMakeCache.txt
 *.a
 *.lib
 *.out
+*.su
+*.cyclo
 *.log
 *.tmp
 *.swp
@@ -59,6 +61,13 @@ CMakeCache.txt
 *.hex
 *.map
 *.lst
+*.list
+*.mk
+objects.list
+objects.mk
+sources.mk
+subdir.mk
+makefile
 *.launches
 *.mxproject
 *.stm32cubeide/

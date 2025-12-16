@@ -21,6 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h>
+#include <stdio.h>
 #include "hl/hal_pwm.h"
 #include "fsm_main.h"
 #include "hl/hal_dac.h"
@@ -36,6 +38,12 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+/* Set to 1 to build a minimal firmware that only brings up USART2 (ST-LINK VCP)
+ * and provides a simple polling echo/heartbeat. This is for debugging the PC
+ * UART link without any other HW init.
+ */
+#define UART_SMOKE_TEST 0
 
 /* USER CODE END PD */
 
@@ -59,8 +67,13 @@ TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
+
+/* Set to 1 when SystemClock_Config() falls back to MSI because HSE/PLL failed. */
+volatile uint8_t g_clock_fallback_active = 0U;
 
 /* USER CODE END PV */
 
@@ -81,6 +94,21 @@ static void MX_TIM6_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void uart2_panic_print(const char *msg)
+{
+  /* Best-effort: bring up USART2 using the current clock domain (even if
+   * SystemClock_Config() failed and we are still on the reset-default MSI).
+   */
+  (void)MX_USART2_UART_Init();
+  const char *prefix = "STAT:ERR:";
+  (void)HAL_UART_Transmit(&huart2, (uint8_t *)prefix, (uint16_t)strlen(prefix), 1000U);
+  if (msg != NULL) {
+    (void)HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)strlen(msg), 1000U);
+  }
+  const char *suffix = "\n";
+  (void)HAL_UART_Transmit(&huart2, (uint8_t *)suffix, (uint16_t)strlen(suffix), 1000U);
+}
 
 /* USER CODE END 0 */
 
@@ -153,6 +181,11 @@ int main(void)
 
   /* Turn on Init LED to indicate successful initialization */
   HL_GPIO_Write(HL_GPIO_LED_INIT, HL_GPIO_HIGH);
+
+  /* Hardware-visible alarm: external clock failed, running on MSI fallback. */
+  if (g_clock_fallback_active) {
+    (void)HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_HIGH);
+  }
 
   /* ========================================================================== */
   /*                            TEST FUNCTIONS                                  */
@@ -355,7 +388,10 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
+  /* Primary clock plan: HSE + PLL. If HSE is missing/broken, fall back to MSI
+   * so the device stays controllable via USART2.
+   */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
@@ -367,27 +403,43 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
-    Error_Handler();
+    /* Fallback: MSI @ 4 MHz, no PLL. */
+    g_clock_fallback_active = 1U;
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI | RCC_OSCILLATORTYPE_LSI;
+    RCC_OscInitStruct.HSEState = RCC_HSE_OFF;
+    RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+    RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
+    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_OFF;
+    (void)HAL_RCC_OscConfig(&RCC_OscInitStruct);
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
   */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                              | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
-  {
-    Error_Handler();
+  if (!g_clock_fallback_active) {
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
+    {
+      /* If switching clocks fails, fall back to MSI. */
+      g_clock_fallback_active = 1U;
+    }
   }
-  HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
 
-  /** Enables the Clock Security System
-  */
-  HAL_RCC_EnableCSS();
+  if (g_clock_fallback_active) {
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
+    (void)HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0);
+  } else {
+    HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
+    /* Enables the Clock Security System */
+    HAL_RCC_EnableCSS();
+  }
 }
 
 /**
@@ -744,6 +796,12 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
+  /* DMA1_Channel6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
+  /* DMA1_Channel7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
 
 }
 
