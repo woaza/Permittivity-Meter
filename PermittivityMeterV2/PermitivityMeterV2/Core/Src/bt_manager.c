@@ -532,6 +532,9 @@ void BT_Manager_Init(void)
     PC_HostBridge_Init();
     s_pending_event = BT_EVENT_NONE;
     Debug_LogDriver("BT", "init");
+
+    /* Proof-of-flash / proof-of-TX for the PC host bridge. */
+    BT_SendStatus("BOOT_V2");
 }
 
 void BT_ProcessIncoming(const char *buffer)
@@ -543,6 +546,8 @@ void BT_ProcessIncoming(const char *buffer)
     if (strncmp(buffer, "CMD:CONN", 8) == 0) {
         push_event(BT_EVENT_CONN);
         Debug_LogDriver("BT_RX", "CMD:CONN");
+        /* Handshake ack so the PC can confirm the UART path is alive. */
+        BT_SendStatus("RDY");
     } else if (strncmp(buffer, "CMD:CAL", 7) == 0) {
         push_event(BT_EVENT_CAL);
         Debug_LogDriver("BT_RX", "CMD:CAL");

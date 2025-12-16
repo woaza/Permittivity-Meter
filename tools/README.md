@@ -19,6 +19,9 @@ pip install -r tools/requirements.txt
 python tools/pc_cli.py --port COM7
 ```
 
+On reset/power-up the firmware emits `STAT:BOOT_V2` once (a quick sanity check
+that the USART2→ST-LINK VCP TX path is working).
+
 Supported interactive commands:
 
 - `conn` – send `CMD:CONN`, expect `STAT:RDY`

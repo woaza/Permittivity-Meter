@@ -21,6 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h>
+#include <stdio.h>
 #include "hl/hal_pwm.h"
 #include "fsm_main.h"
 #include "hl/hal_dac.h"
@@ -36,6 +38,12 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+/* Set to 1 to build a minimal firmware that only brings up USART2 (ST-LINK VCP)
+ * and provides a simple polling echo/heartbeat. This is for debugging the PC
+ * UART link without any other HW init.
+ */
+#define UART_SMOKE_TEST 0
 
 /* USER CODE END PD */
 
@@ -82,6 +90,21 @@ static void MX_TIM6_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+static void uart2_panic_print(const char *msg)
+{
+  /* Best-effort: bring up USART2 using the current clock domain (even if
+   * SystemClock_Config() failed and we are still on the reset-default MSI).
+   */
+  (void)MX_USART2_UART_Init();
+  const char *prefix = "STAT:ERR:";
+  (void)HAL_UART_Transmit(&huart2, (uint8_t *)prefix, (uint16_t)strlen(prefix), 1000U);
+  if (msg != NULL) {
+    (void)HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)strlen(msg), 1000U);
+  }
+  const char *suffix = "\n";
+  (void)HAL_UART_Transmit(&huart2, (uint8_t *)suffix, (uint16_t)strlen(suffix), 1000U);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -110,6 +133,48 @@ int main(void)
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
+
+  /* USER CODE BEGIN UART_SMOKE_TEST */
+#if UART_SMOKE_TEST
+  MX_USART2_UART_Init();
+
+  const char *boot = "STAT:UART_SMOKE_TEST\n";
+  (void)HAL_UART_Transmit(&huart2, (uint8_t *)boot, (uint16_t)strlen(boot), 1000U);
+
+  uint32_t last_alive = HAL_GetTick();
+  char line[128];
+  uint32_t idx = 0U;
+  memset(line, 0, sizeof(line));
+
+  while (1) {
+    uint8_t ch = 0U;
+    if (HAL_UART_Receive(&huart2, &ch, 1U, 10U) == HAL_OK) {
+      if (ch == '\n' || ch == '\r') {
+        if (idx > 0U) {
+          char out[160];
+          (void)snprintf(out, sizeof(out), "STAT:ECHO:%s\n", line);
+          (void)HAL_UART_Transmit(&huart2, (uint8_t *)out, (uint16_t)strlen(out), 1000U);
+          idx = 0U;
+          memset(line, 0, sizeof(line));
+        }
+      } else {
+        if (idx < (sizeof(line) - 1U)) {
+          line[idx++] = (char)ch;
+        } else {
+          idx = 0U;
+          memset(line, 0, sizeof(line));
+        }
+      }
+    }
+
+    if ((HAL_GetTick() - last_alive) >= 1000U) {
+      last_alive = HAL_GetTick();
+      const char *alive = "STAT:ALIVE\n";
+      (void)HAL_UART_Transmit(&huart2, (uint8_t *)alive, (uint16_t)strlen(alive), 1000U);
+    }
+  }
+#endif
+  /* USER CODE END UART_SMOKE_TEST */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
@@ -367,7 +432,22 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
-    Error_Handler();
+    /* If HSE/PLL fails (common when HSE is not present or does not start),
+     * report it over USART2 and fall back to MSI so we can still talk to the PC.
+     */
+    uart2_panic_print("RCC_OSC");
+
+    RCC_OscInitStruct = (RCC_OscInitTypeDef){0};
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_MSI;
+    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+    RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+    RCC_OscInitStruct.MSICalibrationValue = 0;
+    RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6; /* ~4 MHz */
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_OFF;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+      uart2_panic_print("RCC_OSC_FALLBACK");
+      Error_Handler();
+    }
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
@@ -381,7 +461,16 @@ void SystemClock_Config(void)
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
   {
-    Error_Handler();
+    uart2_panic_print("RCC_CLK");
+
+    /* If PLL clock tree can't be applied (e.g. because we fell back to MSI),
+     * switch SYSCLK to MSI.
+     */
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK) {
+      uart2_panic_print("RCC_CLK_FALLBACK");
+      Error_Handler();
+    }
   }
   HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
 
