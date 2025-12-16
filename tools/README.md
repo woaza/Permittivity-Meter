@@ -94,10 +94,17 @@ python tools/pc_ui.py --port COM4
 
 The UI issues `CMD:CONN` on connect and renders a device-like panel:
 
-- LCD (2 lines)
-- 4 LEDs (STATUS/MEAS/EXCITE/ERROR)
-- Button B1 press/release
-- Two tuning sliders (FRQ_TN / Q_FACT_TN → `CMD:HAL:DAC:SET:0/1:<volts>`) (requires manual mode)
-- Excitation toggle (PWM start/stop → `CMD:HAL:PWM:START/STOP`) (requires manual mode)
+- Clear sections for different hardware blocks:
+	- LEDs (indicator + HAL set/get/toggle)
+	- LCD (snapshot + HAL set)
+	- Button (simulate via `CMD:BTN:*` + read physical state via `CMD:HAL:BTN:READ`)
+	- DAC (sliders + raw set)
+	- ADC (read volts/raw)
+	- PWM / excitation (start/stop/get + set freq/duty)
+	- RF gain (set/get)
+	- NINA (RST/STOP control)
+- Manual mode toggle (Handbetrieb) so HAL commands are unlocked (`CMD:MANUAL:ON/OFF`).
+- RF mock controls (e.g., `CMD:MOCK:RF:RES/NOISE/BASE` and `CMD:MOCK:RF:FAIL:*`).
+- Refresh button and optional auto-refresh polling (useful if you don’t rely on `STAT:HW:*` push frames).
 
-It updates from incoming `DAT:LCD:*` and `STAT:HW:*` frames (no periodic polling). On the first `STAT:RDY` after connect it requests a one-time snapshot via `CMD:LEDS` and `CMD:LCD`.
+It updates primarily from incoming `DAT:LCD:*` and `STAT:HW:*` frames. On the first `STAT:RDY`/`STAT:MANUAL` after connect it requests a one-time snapshot via `CMD:LEDS` and `CMD:LCD`.
