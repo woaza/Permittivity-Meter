@@ -70,6 +70,30 @@ class SerialClient:
         self._reader.join(timeout=0.5)
         self._serial.close()
 
+    def reset_target(self, pulse_s: float = 0.08) -> bool:
+        """Try to reset the target MCU using serial control lines.
+
+        Many USB-UART bridges can route DTR/RTS to the MCU reset circuit.
+        If the hardware doesn't support this, the method returns False.
+        """
+
+        # Some backends / adapters may not expose these attributes.
+        if not hasattr(self._serial, "setDTR") or not hasattr(self._serial, "setRTS"):
+            print("[WARN] Serial backend does not support DTR/RTS reset")
+            return False
+
+        try:
+            # Common convention: DTR low pulse triggers reset (inverted through transistor).
+            self._serial.setDTR(False)
+            self._serial.setRTS(False)
+            time.sleep(max(0.01, pulse_s))
+            self._serial.setDTR(True)
+            self._serial.setRTS(True)
+            return True
+        except Exception as exc:  # pragma: no cover
+            print(f"[WARN] Failed to toggle DTR/RTS for reset: {exc}")
+            return False
+
     def _rx_worker(self) -> None:
         while not self._stop.is_set():
             try:
@@ -123,6 +147,19 @@ def run_script(commands: Iterable[str], client: SerialClient, delay: float) -> N
 def dispatch_command(line: str, client: SerialClient) -> None:
     if line in ("quit", "exit"):
         raise KeyboardInterrupt
+
+    if line == "reset":
+        # Preferred: ask firmware to reboot (works over ST-LINK VCP).
+        client.send_line("CMD:RESET")
+
+        # Best-effort fallback: toggle control lines (only works if wired).
+        ok = client.reset_target()
+        if not ok:
+            print("[WARN] DTR/RTS reset not available.")
+
+        # Give the target a moment to reboot and print boot frames.
+        time.sleep(0.8)
+        return
 
     if line.startswith("send "):
         _, payload = line.split(" ", 1)
@@ -229,7 +266,7 @@ def dispatch_command(line: str, client: SerialClient) -> None:
         + " hal-adc-read, hal-adc-raw, hal-dac-set <ch> <voltage>, hal-dac-raw <ch> <value>,"
         + " hal-gain-set <level>, hal-gain-get, hal-btn-read, hal-nina-rst <0/1>, hal-nina-stop <0/1>,"
         + " hal-lcd-set <0/1> <text>, hal-pwm-start, hal-pwm-stop, hal-pwm-get, hal-pwm-freq <hz>, hal-pwm-duty <0..100>,"
-        + " send <RAW>, exit",
+        + " reset, send <RAW>, exit",
     )
 
 

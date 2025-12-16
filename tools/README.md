@@ -92,11 +92,12 @@ summaries, and reset controls, launch the PySimpleGUI tool:
 python tools/pc_ui.py --port COM4
 ```
 
-The UI automatically issues `CMD:CONN` on connect, exposes buttons for
-`CAL`, `MEAS`, manual mode toggle, trace capture, button press/release, and provides a raw
-Bluetooth-style send box. The HAL quick actions (`HAL Init` / `HAL ADC`) require manual mode.
-The ADC/DAC confirmation panel updates with the
-latest `DAT:RES` frame plus the minimum amplitude found in the current RF
-trace so you can quickly sanity-check values. LED, LCD, and log panes now
-refresh automatically every couple of seconds so state changes pushed by the
-MCU appear without manual refresh clicks.
+The UI issues `CMD:CONN` on connect and renders a device-like panel:
+
+- LCD (2 lines)
+- 4 LEDs (STATUS/MEAS/EXCITE/ERROR)
+- Button B1 press/release
+- Two tuning sliders (FRQ_TN / Q_FACT_TN → `CMD:HAL:DAC:SET:0/1:<volts>`) (requires manual mode)
+- Excitation toggle (PWM start/stop → `CMD:HAL:PWM:START/STOP`) (requires manual mode)
+
+It updates from incoming `DAT:LCD:*` and `STAT:HW:*` frames (no periodic polling). On the first `STAT:RDY` after connect it requests a one-time snapshot via `CMD:LEDS` and `CMD:LCD`.

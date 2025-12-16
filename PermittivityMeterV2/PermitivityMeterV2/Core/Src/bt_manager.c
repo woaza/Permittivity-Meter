@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <math.h>
 
 #include "bsp_rf.h"
 #include "bsp_lcd.h"
@@ -16,8 +17,56 @@
 #include "rf_trace.h"
 #include "usb_cdc_bridge.h"
 
+#include "stm32l4xx_hal.h"
+
 static BT_Event_t s_pending_event = BT_EVENT_NONE;
 static uint8_t s_manual_mode_enabled = 0U;
+
+static void output_line(const char *line);
+
+static void fmt_fixed_3(char *out, size_t out_len, float value)
+{
+    if (out == NULL || out_len == 0U) {
+        return;
+    }
+
+    if (!isfinite(value)) {
+        strncpy(out, "nan", out_len - 1U);
+        out[out_len - 1U] = '\0';
+        return;
+    }
+
+    const float scaled_f = value * 1000.0f;
+    const int32_t scaled = (int32_t)(scaled_f + ((scaled_f >= 0.0f) ? 0.5f : -0.5f));
+    const int32_t whole = scaled / 1000;
+    int32_t frac = scaled % 1000;
+    if (frac < 0) {
+        frac = -frac;
+    }
+    (void)snprintf(out, out_len, "%ld.%03ld", (long)whole, (long)frac);
+}
+
+static void fmt_fixed_4(char *out, size_t out_len, float value)
+{
+    if (out == NULL || out_len == 0U) {
+        return;
+    }
+
+    if (!isfinite(value)) {
+        strncpy(out, "nan", out_len - 1U);
+        out[out_len - 1U] = '\0';
+        return;
+    }
+
+    const float scaled_f = value * 10000.0f;
+    const int32_t scaled = (int32_t)(scaled_f + ((scaled_f >= 0.0f) ? 0.5f : -0.5f));
+    const int32_t whole = scaled / 10000;
+    int32_t frac = scaled % 10000;
+    if (frac < 0) {
+        frac = -frac;
+    }
+    (void)snprintf(out, out_len, "%ld.%04ld", (long)whole, (long)frac);
+}
 
 static void output_hw_framef(const char *fmt, ...)
 {
@@ -115,13 +164,17 @@ static void send_trace_dump(void)
 
     for (size_t i = 0; i < count; ++i) {
         char buffer[160];
+        char v_str[16];
+        char a_str[16];
+        fmt_fixed_4(v_str, sizeof(v_str), samples[i].voltage);
+        fmt_fixed_4(a_str, sizeof(a_str), samples[i].amplitude);
         snprintf(buffer,
                  sizeof(buffer),
-                 "DAT:TRACE:%s:%03u:V:%.4f:A:%.4f",
+                 "DAT:TRACE:%s:%03u:V:%s:A:%s",
                  trace_mode_to_str(mode),
                  (unsigned)i,
-                 samples[i].voltage,
-                 samples[i].amplitude);
+                 v_str,
+                 a_str);
         output_line(buffer);
     }
 }
@@ -326,10 +379,12 @@ static bool handle_hal_adc_command(const char *payload)
     if (strncmp(payload, "READ", 4) == 0) {
         float voltage = 0.0f;
         if (HalBoard_ADC_ReadVoltage(&voltage) == HAL_BOARD_OK) {
+            char v_str[16];
+            fmt_fixed_3(v_str, sizeof(v_str), voltage);
             char resp[48];
-            snprintf(resp, sizeof(resp), "HAL_ADC:%.3fV", voltage);
+            snprintf(resp, sizeof(resp), "HAL_ADC:%sV", v_str);
             BT_SendStatus(resp);
-            output_hw_framef("ADC:V:%.3f", voltage);
+            output_hw_framef("ADC:V:%s", v_str);
         } else {
             BT_SendStatus("HAL_ADC_ERR");
         }
@@ -378,10 +433,27 @@ static bool handle_hal_dac_command(const char *payload)
         }
         
         if (HalBoard_DAC_SetVoltage((uint8_t)channel, voltage) == HAL_BOARD_OK) {
+            char v2_str[32];
+            char v3_str[32];
+            if (!isfinite(voltage)) {
+                strncpy(v2_str, "nan", sizeof(v2_str) - 1U);
+                v2_str[sizeof(v2_str) - 1U] = '\0';
+            } else {
+                const float scaled2_f = voltage * 100.0f;
+                const int32_t scaled2 = (int32_t)(scaled2_f + ((scaled2_f >= 0.0f) ? 0.5f : -0.5f));
+                const int32_t whole2 = scaled2 / 100;
+                int32_t frac2 = scaled2 % 100;
+                if (frac2 < 0) {
+                    frac2 = -frac2;
+                }
+                (void)snprintf(v2_str, sizeof(v2_str), "%ld.%02ld", (long)whole2, (long)frac2);
+            }
+
+            fmt_fixed_3(v3_str, sizeof(v3_str), voltage);
             char resp[48];
-            snprintf(resp, sizeof(resp), "HAL_DAC_%u:%.2fV", (unsigned)channel, voltage);
+            snprintf(resp, sizeof(resp), "HAL_DAC_%u:%sV", (unsigned)channel, v2_str);
             BT_SendStatus(resp);
-            output_hw_framef("DAC:%u:V:%.3f", (unsigned)channel, voltage);
+            output_hw_framef("DAC:%u:V:%s", (unsigned)channel, v3_str);
         } else {
             BT_SendStatus("HAL_DAC_ERR");
         }
@@ -700,15 +772,26 @@ void BT_ProcessIncoming(const char *buffer)
         return;
     }
 
+    /* Allow the host to force a clean reboot between tests. */
+    if (strncmp(buffer, "CMD:RESET", 9) == 0) {
+        BT_SendStatus("RESETTING");
+        /* Best-effort: give UART a moment to flush. */
+        HAL_Delay(20);
+        NVIC_SystemReset();
+        return;
+    }
+
     if (strncmp(buffer, "CMD:CONN", 8) == 0) {
         push_event(BT_EVENT_CONN);
         Debug_LogDriver("BT_RX", "CMD:CONN");
     } else if (strncmp(buffer, "CMD:CAL", 7) == 0) {
-        push_event(BT_EVENT_CAL);
         Debug_LogDriver("BT_RX", "CMD:CAL");
+        BT_SendStatus("CAL_REQ");
+        push_event(BT_EVENT_CAL);
     } else if (strncmp(buffer, "CMD:MEAS", 8) == 0) {
-        push_event(BT_EVENT_MEAS);
         Debug_LogDriver("BT_RX", "CMD:MEAS");
+        BT_SendStatus("MEAS_REQ");
+        push_event(BT_EVENT_MEAS);
     } else if (strncmp(buffer, "CMD:BTN", 8) == 0) {
         handle_button_command(buffer);
     } else if (strncmp(buffer, "CMD:LEDS", 9) == 0) {
@@ -754,11 +837,19 @@ void BT_SendStatus(const char *status_tag)
 void BT_SendResult(MeasurementResult_t result)
 {
     char buffer[128];
+
+    char er_str[16];
+    char ei_str[16];
+    char dens_str[16];
+    fmt_fixed_3(er_str, sizeof(er_str), result.epsilon_real);
+    fmt_fixed_3(ei_str, sizeof(ei_str), result.epsilon_imag);
+    fmt_fixed_3(dens_str, sizeof(dens_str), result.snow_density);
+
     snprintf(buffer, sizeof(buffer),
-             "DAT:RES:ER:%.3f:EI:%.3f:DENS:%.3f",
-             result.epsilon_real,
-             result.epsilon_imag,
-             result.snow_density);
+             "DAT:RES:ER:%s:EI:%s:DENS:%s",
+             er_str,
+             ei_str,
+             dens_str);
     output_line(buffer);
 }
 

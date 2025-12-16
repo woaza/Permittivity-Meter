@@ -409,9 +409,11 @@ static void FSM_HandleMeasureSearch(void)
         BSP_RF_EnableExcitation(0U);
         BSP_LED_Set(LED_EXCITE, 0U);
         if (FSM_IsMeasurementValid(&s_last_result)) {
-            FSM_TransitionTo(STATE_CALCULATION, "meas_done");
+            BT_SendResult(s_last_result);
+            BSP_LED_Set(LED_MEAS, 0U);
+            FSM_TransitionTo(STATE_IDLE, "meas_ok");
         } else {
-            BT_SendStatus("ERR");
+            BT_SendStatus("ERR:MEAS_INVALID");
             Debug_LogEvent("RF_MEAS", "invalid");
             FSM_TransitionTo(STATE_ERROR, "meas_fail");
         }

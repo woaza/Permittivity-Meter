@@ -7,7 +7,7 @@
 #include "debug_log.h"
 
 #define RX_BUFFER_SIZE 128
-#define UART_TX_TIMEOUT_MS 25U
+#define UART_TX_TIMEOUT_MS 200U
 
 static char s_rx_buffer[RX_BUFFER_SIZE];
 static uint32_t s_rx_index = 0;
@@ -105,7 +105,14 @@ void PC_HostBridge_Poll(void)
     }
 
     /* Drain a small amount per call to avoid starving the FSM. */
-    for (uint32_t budget = 0U; budget < 32U; ++budget) {
+    for (uint32_t budget = 0U; budget < 256U; ++budget) {
+        /* Clear ORE proactively: if an overrun happened, we already lost bytes.
+         * Clearing it early helps the UART resume receiving cleanly.
+         */
+        if (__HAL_UART_GET_FLAG(&UART_BRIDGE_HANDLE, UART_FLAG_ORE) != RESET) {
+            __HAL_UART_CLEAR_OREFLAG(&UART_BRIDGE_HANDLE);
+        }
+
         if (__HAL_UART_GET_FLAG(&UART_BRIDGE_HANDLE, UART_FLAG_RXNE) == RESET) {
             break;
         }

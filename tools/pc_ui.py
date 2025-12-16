@@ -41,24 +41,12 @@ LED_COLORS = {
 
 CMD = {
     "connect": "CMD:CONN",
-    "cal": "CMD:CAL",
-    "meas": "CMD:MEAS",
     "manual_on": "CMD:MANUAL:ON",
     "manual_off": "CMD:MANUAL:OFF",
     "btn_press": "CMD:BTN:PRESS",
     "btn_release": "CMD:BTN:RELEASE",
     "lcd": "CMD:LCD",
     "leds": "CMD:LEDS",
-    "log": "CMD:LOG",
-    "trace": "CMD:TRACE",
-    "hal_init": "CMD:HAL:INIT",
-    "hal_adc": "CMD:HAL:ADC:READ",
-}
-
-AUTO_REFRESH_INTERVALS = {
-    "leds": 0.75,
-    "lcd": 1.5,
-    "log": 2.5,
 }
 
 
@@ -124,32 +112,27 @@ class AppState:
     def __init__(self) -> None:
         self.last_lcd = ["", ""]
         self.last_leds = {key: 0 for key in LED_KEYS}
-        self.last_measure = "N/A"
-        self.last_trace = "No samples"
         self.client: Optional[SerialClient] = None
-        self.trace_min: Optional[tuple[float, float]] = None
-        self.next_refresh: dict[str, float] = {name: 0.0 for name in AUTO_REFRESH_INTERVALS}
-
-    def reset_measurements(self) -> None:
-        self.last_measure = "N/A"
-        self.last_trace = "No samples"
-        self.trace_min = None
-
-    def force_refresh(self) -> None:
-        now = time.monotonic()
-        for key in self.next_refresh:
-            self.next_refresh[key] = now
-
-    def defer_refresh(self, name: str) -> None:
-        if name not in AUTO_REFRESH_INTERVALS:
-            return
-        self.next_refresh[name] = time.monotonic() + AUTO_REFRESH_INTERVALS[name]
+        self.is_manual = False
+        self.pwm_running: Optional[int] = None
+        self.pwm_freq_hz: Optional[int] = None
+        self.pwm_duty: Optional[int] = None
+        self.dac_volts = [0.0, 0.0]
+        self.btn_pressed: Optional[int] = None
+        self._last_slider_tx: dict[int, float] = {0: 0.0, 1: 0.0}
 
 
 def build_layout() -> list[list[sg.Element]]:
     led_row = [
-        sg.Text(key=f"-LED-{name}-", size=(8, 1), text_color="white", background_color=LED_COLORS["off"],
-                justification="center", relief=sg.RELIEF_SUNKEN)
+        sg.Text(
+            name,
+            key=f"-LED-{name}-",
+            size=(8, 1),
+            text_color="white",
+            background_color=LED_COLORS["off"],
+            justification="center",
+            relief=sg.RELIEF_SUNKEN,
+        )
         for name in LED_KEYS
     ]
 
@@ -165,37 +148,66 @@ def build_layout() -> list[list[sg.Element]]:
         ]
     ]
 
-    control_frame = [
-        [sg.Button("Handshake", key="-CMD-CONN-"), sg.Button("Calibrate", key="-CMD-CAL-"),
-         sg.Button("Measure", key="-CMD-MEAS-"), sg.Button("Trace", key="-CMD-TRACE-")],
-        [sg.Button("Manual ON", key="-CMD-MANUAL-ON-"), sg.Button("Manual OFF", key="-CMD-MANUAL-OFF-"),
-         sg.Button("HAL Init", key="-CMD-HAL-INIT-"), sg.Button("HAL ADC", key="-CMD-HAL-ADC-")],
-        [sg.Button("Refresh LCD", key="-CMD-LCD-"), sg.Button("Refresh LEDs", key="-CMD-LEDS-"),
-         sg.Button("Pull Logs", key="-CMD-LOG-"), sg.Button("Reset Device", key="-CMD-RESET-")],
-        [sg.Button("Button Press", key="-CMD-BTN-PRESS-"), sg.Button("Button Release", key="-CMD-BTN-REL-")],
+    device_header = [
+        [
+            sg.Text("Mode:"),
+            sg.Text("AUTO", key="-MODE-", size=(8, 1)),
+            sg.Button("Manual ON", key="-CMD-MANUAL-ON-"),
+            sg.Button("Manual OFF", key="-CMD-MANUAL-OFF-"),
+            sg.Text("Excitation:"),
+            sg.Text("?", key="-PWM-RUN-", size=(6, 1)),
+            sg.Button("Excite ON", key="-CMD-PWM-ON-"),
+            sg.Button("Excite OFF", key="-CMD-PWM-OFF-"),
+        ]
     ]
 
     lcd_frame = [
-        [sg.Text("LCD Line 0:"), sg.Text("", size=(40, 1), key="-LCD0-")],
-        [sg.Text("LCD Line 1:"), sg.Text("", size=(40, 1), key="-LCD1-")],
+        [sg.Text(" " * 20, key="-LCD0-", size=(24, 1), relief=sg.RELIEF_SUNKEN)],
+        [sg.Text(" " * 20, key="-LCD1-", size=(24, 1), relief=sg.RELIEF_SUNKEN)],
     ]
 
-    bt_frame = [
-        [sg.Multiline(size=(70, 15), key="-LOG-", autoscroll=True, disabled=True, reroute_stdout=False)],
-        [sg.Input(key="-SEND-INPUT-", expand_x=True), sg.Button("Send Raw", key="-SEND-RAW-")],
+    button_frame = [
+        [sg.Button("B1 Press", key="-CMD-BTN-PRESS-"), sg.Button("B1 Release", key="-CMD-BTN-REL-")],
+        [sg.Text("Button:"), sg.Text("?", key="-BTN-STATE-", size=(10, 1))],
     ]
 
-    adc_frame = [
-        [sg.Text("Last Measurement:"), sg.Text("N/A", key="-MEAS-RESULT-", size=(45, 1))],
-        [sg.Text("Trace Summary:"), sg.Text("No samples", key="-TRACE-SUMMARY-", size=(45, 2))],
+    tuning_frame = [
+        [
+            sg.Text("FRQ_TN (DAC0)"),
+            sg.Slider(
+                range=(0.0, 3.3),
+                resolution=0.01,
+                orientation="h",
+                size=(30, 15),
+                key="-DAC0-",
+                enable_events=True,
+            ),
+            sg.Text("0.00V", key="-DAC0-TXT-", size=(8, 1)),
+        ],
+        [
+            sg.Text("Q_FACT_TN (DAC1)"),
+            sg.Slider(
+                range=(0.0, 3.3),
+                resolution=0.01,
+                orientation="h",
+                size=(30, 15),
+                key="-DAC1-",
+                enable_events=True,
+            ),
+            sg.Text("0.00V", key="-DAC1-TXT-", size=(8, 1)),
+        ],
+    ]
+
+    serial_frame = [
+        [sg.Multiline(size=(70, 12), key="-LOG-", autoscroll=True, disabled=True, reroute_stdout=False)],
     ]
 
     layout = [
         [sg.Frame("Connection", connection_frame)],
-        [sg.Frame("LEDs", [[*led_row]])],
-        [sg.Frame("Controls", control_frame)],
-        [sg.Frame("LCD", lcd_frame), sg.Frame("ADC / DAC", adc_frame)],
-        [sg.Frame("Bluetooth Feed", bt_frame)],
+        [sg.Frame("Device", device_header)],
+        [sg.Frame("LEDs", [[*led_row]]), sg.Frame("LCD", lcd_frame)],
+        [sg.Frame("Button", button_frame), sg.Frame("Tuning", tuning_frame)],
+        [sg.Frame("Serial", serial_frame)],
     ]
     return layout
 
@@ -227,32 +239,70 @@ def parse_lcd_line(line: str, state: AppState, window: sg.Window) -> None:
     window[f"-LCD{idx}-"].update(parts[3])
 
 
-def parse_measurement(line: str, state: AppState, window: sg.Window) -> None:
-    # DAT:RES:ER:<val>:EI:<val>:DENS:<val>
-    state.last_measure = line.replace("DAT:RES:", "")
-    window["-MEAS-RESULT-"].update(state.last_measure)
-
-
-def parse_trace(line: str, state: AppState, window: sg.Window) -> None:
-    # DAT:TRACE:MODE:IDX:V:<val>:A:<val>
-    try:
-        parts = line.split(":")
-        idx = int(parts[3])
-        voltage = float(parts[5])
-        amplitude = float(parts[7])
-    except (ValueError, IndexError):
+def parse_hw_report(line: str, state: AppState, window: sg.Window) -> None:
+    # STAT:HW:<...>
+    parts = line.split(":")
+    if len(parts) < 3:
         return
-    # Track extrema as confirmation of DAC/ADC health
-    if idx == 0 or state.trace_min is None:
-        state.trace_min = (amplitude, voltage)
-    else:
-        min_amp, min_v = state.trace_min
-        if amplitude < min_amp:
-            state.trace_min = (amplitude, voltage)
-    min_amp, min_v = state.trace_min
-    summary = f"Min A={min_amp:.4f} @ V={min_v:.4f}"
-    state.last_trace = summary
-    window["-TRACE-SUMMARY-"].update(summary)
+
+    # LED updates: STAT:HW:LED:<id>:<0/1>
+    if len(parts) >= 5 and parts[2] == "LED":
+        try:
+            led_id = int(parts[3])
+            level = int(parts[4])
+        except ValueError:
+            return
+        mapping = {0: "STATUS", 1: "MEAS", 2: "EXCITE", 3: "ERROR"}
+        key = mapping.get(led_id)
+        if key is None:
+            return
+        state.last_leds[key] = 1 if level else 0
+        color = LED_COLORS["error"] if key == "ERROR" and level else (LED_COLORS["on"] if level else LED_COLORS["off"])
+        window[f"-LED-{key}-"].update(key, background_color=color)
+        return
+
+    # DAC: STAT:HW:DAC:<ch>:V:<volts>
+    if len(parts) >= 6 and parts[2] == "DAC":
+        try:
+            ch = int(parts[3])
+        except ValueError:
+            return
+        if parts[4] == "V":
+            try:
+                volts = float(parts[5])
+            except ValueError:
+                return
+            if 0 <= ch <= 1:
+                state.dac_volts[ch] = volts
+                window[f"-DAC{ch}-"].update(volts)
+                window[f"-DAC{ch}-TXT-"].update(f"{volts:.2f}V")
+        return
+
+    # PWM: STAT:HW:PWM:RUN:<0/1> / FREQ / DUTY
+    if len(parts) >= 5 and parts[2] == "PWM":
+        field = parts[3]
+        try:
+            value = int(parts[4])
+        except ValueError:
+            return
+        if field == "RUN":
+            state.pwm_running = value
+            window["-PWM-RUN-"].update("ON" if value else "OFF")
+        elif field == "FREQ":
+            state.pwm_freq_hz = value
+        elif field == "DUTY":
+            state.pwm_duty = value
+        return
+
+    # Button: STAT:HW:BTN:<0/1>
+    if len(parts) >= 4 and parts[2] == "BTN":
+        try:
+            pressed = int(parts[3])
+        except ValueError:
+            return
+        state.btn_pressed = pressed
+        window["-BTN-STATE-"].update("PRESSED" if pressed else "RELEASED")
+        return
 
 
 def append_log(window: sg.Window, message: str) -> None:
@@ -265,12 +315,20 @@ def handle_line(line: str, state: AppState, window: sg.Window) -> None:
     append_log(window, line)
     if line.startswith("STAT:LED"):
         parse_led_report(line, state, window)
+    elif line.startswith("STAT:HW:"):
+        parse_hw_report(line, state, window)
     elif line.startswith("DAT:LCD"):
         parse_lcd_line(line, state, window)
-    elif line.startswith("DAT:RES"):
-        parse_measurement(line, state, window)
-    elif line.startswith("DAT:TRACE"):
-        parse_trace(line, state, window)
+    elif line == "STAT:MANUAL_ON":
+        state.is_manual = True
+        window["-MODE-"].update("MANUAL")
+    elif line == "STAT:MANUAL_OFF":
+        state.is_manual = False
+        window["-MODE-"].update("AUTO")
+    elif line == "STAT:RDY":
+        # One-time snapshot after connect; no periodic polling.
+        send_command(state, CMD["leds"])
+        send_command(state, CMD["lcd"])
 
 
 def send_command(state: AppState, cmd: str) -> None:
@@ -299,7 +357,6 @@ def run_ui(args: argparse.Namespace) -> int:
                 append_log(window, f"[ERR] Failed to open port: {exc}")
                 continue
             state.client = client
-            state.force_refresh()
             window["-STATUS-"].update(f"Status: Connected to {port}")
             send_command(state, CMD["connect"])
             append_log(window, f"Connected on {port}")
@@ -309,57 +366,39 @@ def run_ui(args: argparse.Namespace) -> int:
                 state.client = None
             window["-STATUS-"].update("Status: Disconnected")
             append_log(window, "Disconnected")
-        elif event == "-CMD-CONN-":
-            send_command(state, CMD["connect"])
-        elif event == "-CMD-CAL-":
-            send_command(state, CMD["cal"])
-        elif event == "-CMD-MEAS-":
-            send_command(state, CMD["meas"])
         elif event == "-CMD-MANUAL-ON-":
             send_command(state, CMD["manual_on"])
         elif event == "-CMD-MANUAL-OFF-":
             send_command(state, CMD["manual_off"])
-        elif event == "-CMD-HAL-INIT-":
-            send_command(state, CMD["hal_init"])
-        elif event == "-CMD-HAL-ADC-":
-            send_command(state, CMD["hal_adc"])
-        elif event == "-CMD-TRACE-":
-            state.reset_measurements()
-            window["-MEAS-RESULT-"].update(state.last_measure)
-            window["-TRACE-SUMMARY-"].update(state.last_trace)
-            send_command(state, CMD["trace"])
-        elif event == "-CMD-LCD-":
-            send_command(state, CMD["lcd"])
-            state.defer_refresh("lcd")
-        elif event == "-CMD-LEDS-":
-            send_command(state, CMD["leds"])
-            state.defer_refresh("leds")
-        elif event == "-CMD-LOG-":
-            send_command(state, CMD["log"])
-            state.defer_refresh("log")
-        elif event == "-CMD-RESET-":
-            append_log(window, "Issuing logical reset via CMD:CONN")
-            send_command(state, CMD["connect"])
         elif event == "-CMD-BTN-PRESS-":
             send_command(state, CMD["btn_press"])
         elif event == "-CMD-BTN-REL-":
             send_command(state, CMD["btn_release"])
-        elif event == "-SEND-RAW-":
-            raw = values["-SEND-INPUT-"]
-            if raw:
-                send_command(state, raw)
-                append_log(window, f"[TX] {raw}")
-                window["-SEND-INPUT-"].update("")
+
+        elif event == "-CMD-PWM-ON-":
+            send_command(state, "CMD:HAL:PWM:START")
+        elif event == "-CMD-PWM-OFF-":
+            send_command(state, "CMD:HAL:PWM:STOP")
+
+        elif event in ("-DAC0-", "-DAC1-"):
+            # Debounce slider traffic; still no periodic polling.
+            if state.client is None:
+                continue
+            ch = 0 if event == "-DAC0-" else 1
+            try:
+                volts = float(values[event])
+            except (TypeError, ValueError):
+                continue
+            window[f"-DAC{ch}-TXT-"].update(f"{volts:.2f}V")
+            now = time.monotonic()
+            if now - state._last_slider_tx[ch] < 0.15:
+                continue
+            state._last_slider_tx[ch] = now
+            send_command(state, f"CMD:HAL:DAC:SET:{ch}:{volts:.2f}")
 
         if state.client:
             for line in state.client.poll():
                 handle_line(line, state, window)
-
-            now = time.monotonic()
-            for name, interval in AUTO_REFRESH_INTERVALS.items():
-                if now >= state.next_refresh[name]:
-                    send_command(state, CMD[name])
-                    state.next_refresh[name] = now + interval
 
     if state.client:
         state.client.close()
