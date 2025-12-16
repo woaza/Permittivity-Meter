@@ -57,7 +57,7 @@ The tasks below are ordered by **dependency** – complete each step before movi
   - This aliases 20 MHz down to ~2.5 kHz (within ADC Nyquist limit).
 
 - [ ] **3.2 Implement DMA Buffer Capture**
-  - In `bsp_rf.c`, implement `BSP_RF_CaptureBuffer(float* buffer, size_t len)`.git
+- In `bsp_rf.c`, implement `BSP_RF_CaptureBuffer(float* buffer, size_t len)`.
   - Use DMA to fill a buffer (e.g., 256 samples) from ADC.
 
 - [ ] **3.3 Implement DFT/Goertzel Algorithm**
@@ -106,9 +106,8 @@ The tasks below are ordered by **dependency** – complete each step before movi
   - Confirm `bt_manager.c` sends all outputs to both UART4 (BT) and USART2 (USB).
   - Test with PC CLI (`tools/pc_cli.py`).
 
-- [ ] **5.3 USB Input Handling**
-  - Ensure USB CDC input is forwarded to the command parser.
-  - Test `CMD:CAL` and `CMD:MEAS` from PC.
+- [x] **5.3 USB Input Handling**
+  - DONE in V2: USART2 RX is line-wise (Receive-to-Idle, DMA preferred) and feeds `BT_ProcessIncoming()` via `usb_cdc_bridge.c`.
 
 ---
 
