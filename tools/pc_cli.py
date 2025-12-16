@@ -202,13 +202,34 @@ def dispatch_command(line: str, client: SerialClient) -> None:
         client.send_line(f"CMD:HAL:LCD:SET:{line_idx}:{text}")
         return
 
+    if cmd == "hal-pwm-start" and len(args) == 0:
+        client.send_line("CMD:HAL:PWM:START")
+        return
+
+    if cmd == "hal-pwm-stop" and len(args) == 0:
+        client.send_line("CMD:HAL:PWM:STOP")
+        return
+
+    if cmd == "hal-pwm-get" and len(args) == 0:
+        client.send_line("CMD:HAL:PWM:GET")
+        return
+
+    if cmd == "hal-pwm-freq" and len(args) == 1:
+        client.send_line(f"CMD:HAL:PWM:FREQ:{args[0]}")
+        return
+
+    if cmd == "hal-pwm-duty" and len(args) == 1:
+        client.send_line(f"CMD:HAL:PWM:DUTY:{args[0]}")
+        return
+
     print(
         "Unknown command. Supported: "
         + ", ".join(sorted(COMMAND_MAP.keys()))
         + ", hal-init, hal-led-set <id> <0/1>, hal-led-get <id>, hal-led-toggle <id>,"
         + " hal-adc-read, hal-adc-raw, hal-dac-set <ch> <voltage>, hal-dac-raw <ch> <value>,"
         + " hal-gain-set <level>, hal-gain-get, hal-btn-read, hal-nina-rst <0/1>, hal-nina-stop <0/1>,"
-        + " hal-lcd-set <0/1> <text>, send <RAW>, exit",
+        + " hal-lcd-set <0/1> <text>, hal-pwm-start, hal-pwm-stop, hal-pwm-get, hal-pwm-freq <hz>, hal-pwm-duty <0..100>,"
+        + " send <RAW>, exit",
     )
 
 

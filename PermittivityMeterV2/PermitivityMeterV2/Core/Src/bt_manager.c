@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include "bsp_rf.h"
 #include "bsp_lcd.h"
@@ -11,11 +12,29 @@
 #include "debug_log.h"
 #include "mocks/mock_board.h"
 #include "hl/hal_board.h"
+#include "hl/hal_pwm.h"
 #include "rf_trace.h"
 #include "usb_cdc_bridge.h"
 
 static BT_Event_t s_pending_event = BT_EVENT_NONE;
 static uint8_t s_manual_mode_enabled = 0U;
+
+static void output_hw_framef(const char *fmt, ...)
+{
+    if (fmt == NULL) {
+        return;
+    }
+
+    char payload[96];
+    va_list ap;
+    va_start(ap, fmt);
+    (void)vsnprintf(payload, sizeof(payload), fmt, ap);
+    va_end(ap);
+
+    char line[128];
+    (void)snprintf(line, sizeof(line), "STAT:HW:%s", payload);
+    output_line(line);
+}
 
 static void output_line(const char *line)
 {
@@ -249,6 +268,7 @@ static bool handle_hal_led_command(const char *payload)
             char resp[32];
             snprintf(resp, sizeof(resp), "HAL_LED_%u_%s", (unsigned)led_id, state ? "ON" : "OFF");
             BT_SendStatus(resp);
+            output_hw_framef("LED:%u:%u", (unsigned)led_id, state ? 1U : 0U);
         } else {
             BT_SendStatus("HAL_LED_ERR");
         }
@@ -268,6 +288,7 @@ static bool handle_hal_led_command(const char *payload)
             char resp[32];
             snprintf(resp, sizeof(resp), "HAL_LED_%u:%u", (unsigned)led_id, state);
             BT_SendStatus(resp);
+            output_hw_framef("LED:%u:%u", (unsigned)led_id, (unsigned)state);
         } else {
             BT_SendStatus("HAL_LED_ERR");
         }
@@ -286,6 +307,10 @@ static bool handle_hal_led_command(const char *payload)
             char resp[32];
             snprintf(resp, sizeof(resp), "HAL_LED_%u_TOG", (unsigned)led_id);
             BT_SendStatus(resp);
+            uint8_t state = 0U;
+            if (HalBoard_LED_Get((uint8_t)led_id, &state) == HAL_BOARD_OK) {
+                output_hw_framef("LED:%u:%u", (unsigned)led_id, (unsigned)state);
+            }
         } else {
             BT_SendStatus("HAL_LED_ERR");
         }
@@ -304,6 +329,7 @@ static bool handle_hal_adc_command(const char *payload)
             char resp[48];
             snprintf(resp, sizeof(resp), "HAL_ADC:%.3fV", voltage);
             BT_SendStatus(resp);
+            output_hw_framef("ADC:V:%.3f", voltage);
         } else {
             BT_SendStatus("HAL_ADC_ERR");
         }
@@ -317,6 +343,7 @@ static bool handle_hal_adc_command(const char *payload)
             char resp[32];
             snprintf(resp, sizeof(resp), "HAL_ADC:%u", value);
             BT_SendStatus(resp);
+            output_hw_framef("ADC:RAW:%u", (unsigned)value);
         } else {
             BT_SendStatus("HAL_ADC_ERR");
         }
@@ -354,6 +381,7 @@ static bool handle_hal_dac_command(const char *payload)
             char resp[48];
             snprintf(resp, sizeof(resp), "HAL_DAC_%u:%.2fV", (unsigned)channel, voltage);
             BT_SendStatus(resp);
+            output_hw_framef("DAC:%u:V:%.3f", (unsigned)channel, voltage);
         } else {
             BT_SendStatus("HAL_DAC_ERR");
         }
@@ -385,6 +413,7 @@ static bool handle_hal_dac_command(const char *payload)
             char resp[48];
             snprintf(resp, sizeof(resp), "HAL_DAC_%u:%u", (unsigned)channel, (unsigned)raw_val);
             BT_SendStatus(resp);
+            output_hw_framef("DAC:%u:RAW:%u", (unsigned)channel, (unsigned)raw_val);
         } else {
             BT_SendStatus("HAL_DAC_ERR");
         }
@@ -408,6 +437,7 @@ static bool handle_hal_gain_command(const char *payload)
             char resp[32];
             snprintf(resp, sizeof(resp), "HAL_GAIN:%u", (unsigned)level);
             BT_SendStatus(resp);
+            output_hw_framef("GAIN:%u", (unsigned)level);
         } else {
             BT_SendStatus("HAL_GAIN_ERR");
         }
@@ -421,6 +451,7 @@ static bool handle_hal_gain_command(const char *payload)
             char resp[32];
             snprintf(resp, sizeof(resp), "HAL_GAIN:%u", level);
             BT_SendStatus(resp);
+            output_hw_framef("GAIN:%u", (unsigned)level);
         } else {
             BT_SendStatus("HAL_GAIN_ERR");
         }
@@ -437,6 +468,7 @@ static bool handle_hal_btn_command(const char *payload)
         uint8_t state = 0;
         if (HalBoard_Button_Read(&state) == HAL_BOARD_OK) {
             BT_SendStatus(state ? "HAL_BTN:PRESSED" : "HAL_BTN:RELEASED");
+            output_hw_framef("BTN:%u", (unsigned)state);
         } else {
             BT_SendStatus("HAL_BTN_ERR");
         }
@@ -469,6 +501,13 @@ static bool handle_hal_lcd_command(const char *payload)
         char resp[32];
         snprintf(resp, sizeof(resp), "HAL_LCD_L%u_OK", (unsigned)line);
         BT_SendStatus(resp);
+
+        /* Push-style update with the final buffered line content. */
+        char line_buffer[LCD_CHAR_COUNT + 1U];
+        BSP_LCD_GetLine((uint8_t)line, line_buffer, sizeof(line_buffer));
+        char frame[128];
+        snprintf(frame, sizeof(frame), "DAT:LCD:L%u:%s", (unsigned)line, line_buffer);
+        output_line(frame);
         return true;
     }
 
@@ -488,6 +527,7 @@ static bool handle_hal_nina_command(const char *payload)
         
         if (HalBoard_NINA_SetReset((uint8_t)state) == HAL_BOARD_OK) {
             BT_SendStatus(state ? "HAL_NINA:RUN" : "HAL_NINA:RESET");
+            output_hw_framef("NINA:RST:%u", (unsigned)state);
         } else {
             BT_SendStatus("HAL_NINA_ERR");
         }
@@ -504,6 +544,7 @@ static bool handle_hal_nina_command(const char *payload)
         
         if (HalBoard_NINA_SetStop((uint8_t)state) == HAL_BOARD_OK) {
             BT_SendStatus(state ? "HAL_NINA:STOPPED" : "HAL_NINA:RUNNING");
+            output_hw_framef("NINA:STOP:%u", (unsigned)state);
         } else {
             BT_SendStatus("HAL_NINA_ERR");
         }
@@ -511,6 +552,76 @@ static bool handle_hal_nina_command(const char *payload)
     }
     
     return false;
+}
+
+static bool handle_hal_pwm_command(const char *payload)
+{
+    /* CMD:HAL:PWM:START | STOP | GET | FREQ:<hz> | DUTY:<0..100> */
+
+    if (strncmp(payload, "START", 5) == 0) {
+        if (HAL_PWM_Start() == PWM_OK) {
+            BT_SendStatus("HAL_PWM_START_OK");
+        } else {
+            BT_SendStatus("HAL_PWM_ERR");
+        }
+        output_hw_framef("PWM:RUN:%u", HAL_PWM_IsRunning() ? 1U : 0U);
+        output_hw_framef("PWM:FREQ:%lu", (unsigned long)HAL_PWM_GetFrequency());
+        output_hw_framef("PWM:DUTY:%u", (unsigned)HAL_PWM_GetDutyCycle());
+        return true;
+    }
+
+    if (strncmp(payload, "STOP", 4) == 0) {
+        if (HAL_PWM_Stop() == PWM_OK) {
+            BT_SendStatus("HAL_PWM_STOP_OK");
+        } else {
+            BT_SendStatus("HAL_PWM_ERR");
+        }
+        output_hw_framef("PWM:RUN:%u", HAL_PWM_IsRunning() ? 1U : 0U);
+        output_hw_framef("PWM:FREQ:%lu", (unsigned long)HAL_PWM_GetFrequency());
+        output_hw_framef("PWM:DUTY:%u", (unsigned)HAL_PWM_GetDutyCycle());
+        return true;
+    }
+
+    if (strncmp(payload, "GET", 3) == 0) {
+        BT_SendStatus("HAL_PWM_OK");
+        output_hw_framef("PWM:RUN:%u", HAL_PWM_IsRunning() ? 1U : 0U);
+        output_hw_framef("PWM:FREQ:%lu", (unsigned long)HAL_PWM_GetFrequency());
+        output_hw_framef("PWM:DUTY:%u", (unsigned)HAL_PWM_GetDutyCycle());
+        return true;
+    }
+
+    if (strncmp(payload, "FREQ:", 5) == 0) {
+        uint32_t hz = 0U;
+        if (!parse_uint_arg(payload + 5, &hz)) {
+            BT_SendStatus("HAL_PWM_ERR");
+            return true;
+        }
+        if (HAL_PWM_SetFrequency(hz) == PWM_OK) {
+            BT_SendStatus("HAL_PWM_FREQ_OK");
+        } else {
+            BT_SendStatus("HAL_PWM_ERR");
+        }
+        output_hw_framef("PWM:FREQ:%lu", (unsigned long)HAL_PWM_GetFrequency());
+        return true;
+    }
+
+    if (strncmp(payload, "DUTY:", 5) == 0) {
+        uint32_t duty = 0U;
+        if (!parse_uint_arg(payload + 5, &duty)) {
+            BT_SendStatus("HAL_PWM_ERR");
+            return true;
+        }
+        if (HAL_PWM_SetDutyCycle((uint8_t)duty) == PWM_OK) {
+            BT_SendStatus("HAL_PWM_DUTY_OK");
+        } else {
+            BT_SendStatus("HAL_PWM_ERR");
+        }
+        output_hw_framef("PWM:DUTY:%u", (unsigned)HAL_PWM_GetDutyCycle());
+        return true;
+    }
+
+    BT_SendStatus("HAL_PWM_ERR");
+    return true;
 }
 
 static bool handle_hal_command(const char *buffer)
@@ -554,11 +665,16 @@ static bool handle_hal_command(const char *buffer)
     if (strncmp(payload, "LCD:", 4) == 0) {
         return handle_hal_lcd_command(payload + 4);
     }
+
+    if (strncmp(payload, "PWM:", 4) == 0) {
+        return handle_hal_pwm_command(payload + 4);
+    }
     
     /* CMD:HAL:INIT - Initialize HAL Board */
     if (strncmp(payload, "INIT", 4) == 0) {
         HalBoard_Init();
         BT_SendStatus("HAL_INIT_OK");
+        output_hw_framef("HAL:INIT:1");
         return true;
     }
     

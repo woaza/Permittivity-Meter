@@ -45,6 +45,7 @@ Supported interactive commands:
 	- `hal-btn-read`
 	- `hal-nina-rst <0/1>`, `hal-nina-stop <0/1>`
 	- `hal-lcd-set <0/1> <text>`
+	- `hal-pwm-start`, `hal-pwm-stop`, `hal-pwm-get`, `hal-pwm-freq <hz>`, `hal-pwm-duty <0..100>`
 - `send <RAW>` – transmit an arbitrary line verbatim
 - `exit` / `quit` – leave the CLI
 

@@ -282,6 +282,20 @@ While manual mode is active, `CMD:CAL` / `CMD:MEAS` are rejected with `STAT:MANU
 
 If you send a `CMD:HAL:*` command while manual mode is not active, the device responds with `STAT:HAL_LOCKED`.
 
+#### Push-Style ACK Frames (for UI updates)
+
+In addition to the legacy `STAT:HAL_*` responses, successful `CMD:HAL:*` operations also emit structured frames that include the applied values:
+
+- `STAT:HW:LED:<id>:<0/1>`
+- `STAT:HW:DAC:<ch>:V:<volts>` and `STAT:HW:DAC:<ch>:RAW:<value>`
+- `STAT:HW:ADC:V:<volts>` and `STAT:HW:ADC:RAW:<value>`
+- `STAT:HW:GAIN:<0..3>`
+- `STAT:HW:BTN:<0/1>`
+- `STAT:HW:NINA:RST:<0/1>` and `STAT:HW:NINA:STOP:<0/1>`
+- PWM: `STAT:HW:PWM:RUN:<0/1>`, `STAT:HW:PWM:FREQ:<hz>`, `STAT:HW:PWM:DUTY:<0..100>`
+
+This is intended so the PC GUI can update immediately from responses (without periodic polling).
+
 #### LED Control
 
 | Command | Description | Response |
@@ -319,6 +333,18 @@ If you send a `CMD:HAL:*` command while manual mode is not active, the device re
 | Command | Description | Response |
 | :--- | :--- | :--- |
 | `CMD:HAL:LCD:SET:<line>:<text>` | Overwrite LCD line buffer (0/1) with text (padded/truncated). | `STAT:HAL_LCD_L<line>_OK` |
+
+In addition, the firmware pushes the updated buffer as `DAT:LCD:L<line>:<text>`.
+
+#### PWM / Excitation (TIM1 CH2 / PA9)
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:PWM:START` | Start PWM output. | `STAT:HAL_PWM_START_OK` + `STAT:HW:PWM:*` |
+| `CMD:HAL:PWM:STOP` | Stop PWM output. | `STAT:HAL_PWM_STOP_OK` + `STAT:HW:PWM:*` |
+| `CMD:HAL:PWM:GET` | Read PWM run/freq/duty. | `STAT:HAL_PWM_OK` + `STAT:HW:PWM:*` |
+| `CMD:HAL:PWM:FREQ:<hz>` | Set PWM frequency. | `STAT:HAL_PWM_FREQ_OK` + `STAT:HW:PWM:FREQ:<hz>` |
+| `CMD:HAL:PWM:DUTY:<0..100>` | Set PWM duty cycle. | `STAT:HAL_PWM_DUTY_OK` + `STAT:HW:PWM:DUTY:<pct>` |
 
 #### RF Gain
 
