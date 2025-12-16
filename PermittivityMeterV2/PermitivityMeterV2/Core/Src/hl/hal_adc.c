@@ -25,7 +25,7 @@ static ADC_HandleTypeDef *hadc_local = NULL;
 static TIM_HandleTypeDef *htim_trigger = NULL;
 
 static uint16_t dma_buffer[ADC_DMA_BUFFER_SIZE];
-static uint16_t *ready_buffer_ptr = NULL;
+static volatile uint16_t *volatile ready_buffer_ptr = NULL;
 static volatile bool buffer_ready_flag = false;
 
 /* Exported functions --------------------------------------------------------*/
@@ -129,7 +129,8 @@ uint16_t* HL_ADC_GetBuffer(void)
 {
     if (buffer_ready_flag)
     {
-        return ready_buffer_ptr;
+        buffer_ready_flag = false; // Consume-on-read
+        return (uint16_t*)ready_buffer_ptr;
     }
     return NULL;
 }
@@ -144,12 +145,25 @@ bool HL_ADC_IsBufferReady(void)
 }
 
 /**
- * @brief Clear the buffer ready flag (call after processing)
- * @retval None
+ * @brief Check if the buffer contains all zeros (empty)
+ * @param buffer: Pointer to the buffer to check
+ * @retval bool: true if all values are zero, false if any non-zero value exists
  */
-void HL_ADC_ClearBufferReady(void)
+bool HL_ADC_IsBufferEmpty(const uint16_t *buffer)
 {
-    buffer_ready_flag = false;
+    if (buffer == NULL)
+    {
+        return true;  // NULL buffer is considered empty
+    }
+
+    for (uint32_t i = 0; i < ADC_BUFFER_SIZE; i++)
+    {
+        if (buffer[i] != 0)
+        {
+            return false;  // Found a non-zero value
+        }
+    }
+    return true;  // All values are zero
 }
 
 /* Callbacks -----------------------------------------------------------------*/

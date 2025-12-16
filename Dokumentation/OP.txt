@@ -1,0 +1,113 @@
+ 
+ 
+Table of Contents
+1	Operational Amplifier	iii
+2	Operation	1
+2.1	Sine Wave Filter	1
+2.2	Pre-Amplifier	4
+3	6
+
+ 
+
+Operational Amplifier
+There are three operational amplifiers to choose from: OPA836 and OPA2690 from Texas Instruments and ADA4807 from Analog Devices.
+To be able to choose which operational amplifier suits best, a simulation in closed loop has been made. The amplification |\underline{G}\left(j\omega\right)| in passband is about 20dB.
+ 
+Figure ‎1 1	Non-Inverting Amplifier using ADA4807
+ 
+Figure ‎1 2	Bodeplot of Different Operational Amplifiers
+Figure ‎1 2 shows, that OPA2690 has a high amplification at 20MHz, therefore it is going to be used in the amplifier stage. Besides that, OPA836 has a weaker amplification than ADA4807, OPA836 will be used for pre-amplifier and as a voltage follower because a higher voltage is not needed for the notch filter and due to costs.
+Table ‎1 1	Amplification and Phase Shift at 19,999MHz
+	\mathbf{arg}\left[\underline{\mathbit{G}}\left(\mathbit{j\omega}\right)\right] in °	\left|\underline{\mathbit{G}}\left(\mathbit{j\omega}\right)\right| in dB
+ADA4807	-85,686	15,133
+OPA836	-83,330	7,7489
+OPA2690	-38,023	19,522
+ 
+Operation
+Sine Wave Filter
+The sine wave filter 7th order has been replaced by 9th. Reason for that is decrease of damping higher harmonics. In addition to that, the 7th sine wave filter from Rippel is using 39\Omega termination. This gives a mismatch both when using the network analyser and in the simulation. Improvements in terms of matching impedance and filtering higher harmonics have been made.
+It is important to mention that the input voltage is not allowed to be greater than 2V, because it will lead to distortion and the amplifier stage will not be able to perform correctly.
+Sine Wave Filter is used to filter the harmonics of the input rectangle wave, resulting in having a sinusoidal wave for the notch filter.
+ 
+Figure ‎2 1	Sine Wave Filter 9th Order
+A voltage follower is used to not load the DAC-output of the microcontroller. Resistances which are in series to the inductances represents the serial resistance of a real inductor.
+ 
+Figure ‎2 2	Smith Chart of Sine Wave Filter
+Figure ‎2 2 shows a great mismatch of the 7th order lowpass filter. The difference between the ideal and real 9th order lowpass filter is, that the ideal one is from RF-Design and the real one has higher series resistance.
+ 
+Figure ‎2 3	Bodeplot of Sine Wave Filter
+Figure ‎2 3 shows that the 9th order decreases faster than the 7th order. In addition to that it has a small ripple. Reason for that is the use of a Chebyshev filter, which is used due to its high falling edge.
+ 
+Figure ‎2 4	Pol-Zero-Map of 9th Order Sine Wave Filter
+As seen in Figure ‎2 4, all poles are lying on the Chebyshev-Ellipse, which is a sign of a Chebyshev filter.
+
+ 
+Pre-Amplifier
+Besides the use of a different operational amplifier, the topology of the pre-amplifier has not changed.
+ 
+Figure ‎2 5	Pre-Amplifier
+ 
+Figure ‎2 6	Bodeplot of Pre-Amplifier
+Table ‎2 1	Amplification and Phase Shift at 20,045MHz
+|\underline{\mathbit{G}}\left(\mathbit{j\omega}\right)| in dB	\mathbf{arg}[\underline{\mathbit{G}}\left(\mathbit{j\omega}\right)] in °
+4,2966	-41,95
+
+ 
+Notch Filter
+This is the main part of the permittivity meter. It has its resonance frequency f_{res} at 20MHz, at this frequency the output should be ideally 0V. To move the minimum along the frequency, the varactor-diode D1 needs to be tuned. Varactor-diode D2 is used to increase the quality factor.
+During calibration, the sensor is held at a reference medium, air. Both varactor-diodes will be tuned to have its minimum at 20MHz and a high-quality factor. When the sensor is put in a different medium, e.g. snow, then the resonance frequency will be smaller due to the additional capacitance of snow \Delta C and because of conductivity losses, which is represented in the schematic as a fictional resistance R_p, the quality factor Q will also change.
+Both parts a necessary to determine the complex permittivity of snow. The calculation of the complex permittivity can be seen in ‎3.
+ 
+Figure	‎2 7Notch Filter
+ 
+Figure ‎2 8	Bodeplot of Notch-Filter when UD1 varies
+ 
+ 
+Figure ‎2 9	Bodeplot of Notch-Filter when UD2 varies
+ 
+
+ 
+Figure ‎2 10	Bodeplot of Notch-Filter when CS varies
+ 
+ 
+Figure ‎2 11	Bodeplot of Notch-Filter when Rp varies
+ 
+Amplifier Stage
+The only difference in the amplifier stage is the use of a difference transistor. BFP420 BJT NPN transistor from Infineon will be used. The main advantage is its small capacitance (>1pF).
+ 
+Figure ‎2 12	Amplifier Stage
+The real transistor from Infineon has two emitter pins, which is normal for RF-transistors. Reason for that is the reduction of parasitic inductance.
+ 
+Figure ‎2 13	Bodeplot of Amplifier Stage
+Figure ‎2 13 shows, that when the transistor open there are hardly any differences at 20MHz. However, when the transistor is closed, there is a difference between the ideal and real circuit at 20MHz. Reason for that might the small signal parameters of the transistor.
+ 
+Voltage Follower
+Voltage Follower will be used, in order to measure the output voltage with the ADC from the microcontroller.
+ 
+Figure ‎2 14	Voltage Follower
+ 
+Figure ‎2 15	Bodeplot Voltage Follower  
+Determination of the Complex Permittivity
+Formulars
+The definition of the complex permittivity is:
+\varepsilon_c=\varepsilon^\prime-j\varepsilon^{\prime\prime}=\varepsilon_r-j\frac{\sigma}{\omega}
+With the complex permittivity the admittance of the sensor capacitance can be derived:
+\underline{Y}=j\omega\varepsilon_0\varepsilon_ck=j\omega C_0\left(\varepsilon^\prime-j\varepsilon^{\prime\prime}\right)=j\omega\varepsilon^\prime C_0+\omega\varepsilon^{\prime\prime}C_0
+\mathfrak{I}\left\{\underline{Y}\right\}=j\omega\varepsilon^\prime C_0=j\omega\left(C_0+\Delta C\right)\rightarrow\varepsilon^\prime=1+\frac{\Delta C}{C_0}
+Where \Delta C is the difference between the capacitance in a reference medium, e.g. air, C_0 and the capacitance in a measured medium, e.g. snow, C.
+\mathfrak{R}\left\{\underline{Y}\right\}=\omega\varepsilon^{\prime\prime}C_0=\frac{1}{R_p}\rightarrow\varepsilon^{\prime\prime}=\frac{1}{\omega R_pC_0}=\frac{1}{\omega k\varepsilon_0R_p}
+With k is the sensor specific constant k=\frac{C_0}{\varepsilon_0}.
+Real part of the complex permittivity can also calculated with the empirical formula from Denoth.
+\varepsilon^\prime=1+k_D\log{\left(\frac{V_M}{V_{Ref}}\right)}
+Where V_M is the varactor-diode voltage U_{D1} to move the resonance frequency back to 20MHz, when the sensor is in a medium. V_{Ref} is the needed voltage U_{D1} to have the resonance frequency at 20MHz when the sensor is in air. k_D is the slope of the varactor-capacitance in respect to the voltage relative to the sensor capacitance.
+k_D=\frac{C_2-C_1}{C_0\log{\left(\frac{V_2}{V_1}\right)}}
+ 
+Calculation of the Relative Permittivity
+k_D of BB353 from Infineon, C1, C2, V1 and V2 were obtained from Dierer’s thesis, page 53:
+k_D=\frac{C_2-C_1}{C_s\log{\left(\frac{V_2}{V_1}\right)}}=\frac{19,37-15,78}{20\log{\left(\frac{2}{1}\right)}}=0,5963
+For the simulation the sensor capacitance C_s will be increased to 21pF, therefore \Delta C=1pF.
+\varepsilon_{expected}^\prime=1+\frac{\Delta C}{C_s}=1+\frac{1}{20}=1,05
+For V_M and V_{Ref} the simulation gives 0,73V and 0,56V.
+\varepsilon_{calculated}^\prime=1+k\log{\left(\frac{V_M}{V_{Ref}}\right)}=1+0,5963\log{\left(\frac{0,73}{0,56}\right)}=1,0687
+This gives a relative error of:
+r=\frac{\varepsilon_{calculated}^\prime-\varepsilon_{expected}^\prime}{\varepsilon_{expected}^\prime}=\frac{1,0687-1,05}{1,05}=0,0178\Deltaeq1,78%

@@ -18,6 +18,8 @@ static const char *state_to_string(AppState_t state)
         return "INIT";
     case STATE_IDLE:
         return "IDLE";
+    case STATE_MANUAL_OPERATION:
+        return "MAN";
     case STATE_CALIBRATION:
         return "CAL";
     case STATE_MEASURE_SEARCH:
@@ -100,3 +102,5 @@ void Debug_LogClear(void)
     s_last_state = STATE_INIT;
     MockBoard_DebugClear();
 }
+
+

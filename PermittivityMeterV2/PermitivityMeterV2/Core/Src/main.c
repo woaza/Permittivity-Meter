@@ -21,11 +21,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h>
+#include <stdio.h>
 #include "hl/hal_pwm.h"
 #include "fsm_main.h"
 #include "hl/hal_dac.h"
 #include "test/test_hal_dac.h"
 #include "hl/hal_adc.h"
+#include "hl/hal_gpio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,6 +38,12 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+/* Set to 1 to build a minimal firmware that only brings up USART2 (ST-LINK VCP)
+ * and provides a simple polling echo/heartbeat. This is for debugging the PC
+ * UART link without any other HW init.
+ */
+#define UART_SMOKE_TEST 0
 
 /* USER CODE END PD */
 
@@ -58,8 +67,13 @@ TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
+
+/* Set to 1 when SystemClock_Config() falls back to MSI because HSE/PLL failed. */
+volatile uint8_t g_clock_fallback_active = 0U;
 
 /* USER CODE END PV */
 
@@ -80,6 +94,21 @@ static void MX_TIM6_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void uart2_panic_print(const char *msg)
+{
+  /* Best-effort: bring up USART2 using the current clock domain (even if
+   * SystemClock_Config() failed and we are still on the reset-default MSI).
+   */
+  (void)MX_USART2_UART_Init();
+  const char *prefix = "STAT:ERR:";
+  (void)HAL_UART_Transmit(&huart2, (uint8_t *)prefix, (uint16_t)strlen(prefix), 1000U);
+  if (msg != NULL) {
+    (void)HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)strlen(msg), 1000U);
+  }
+  const char *suffix = "\n";
+  (void)HAL_UART_Transmit(&huart2, (uint8_t *)suffix, (uint16_t)strlen(suffix), 1000U);
+}
 
 /* USER CODE END 0 */
 
@@ -122,54 +151,205 @@ int main(void)
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 
-  /* Drivers init function calls*/
+  /* ========================================================================== */
+  /*                         DRIVER INITIALIZATION                              */
+  /* ========================================================================== */
+
+  /* Initialize DAC Driver */
   if (HL_DAC_Init(&hdac1) != DAC_OK)
   {
     Error_Handler();
   }
-  
-  // Turn on Init LED (PA6) to indicate successful init
-  HAL_GPIO_WritePin(GPIOA, INIT_LED_Pin, GPIO_PIN_SET);
+  HL_DAC_Start(DAC_CH_FREQ_TUNE);  /* PA4 - Frequency Tuning */
+  HL_DAC_Start(DAC_CH_Q_FACTOR);   /* PA5 - Q-Factor Tuning */
 
-
-
-  HL_DAC_Init(&hdac1);
-  // Set fixed voltages for testing
- 
-  //HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, 2.3333f);
-  //HL_DAC_SetVoltage(DAC_CH_Q_FACTOR, 2.3333f);
-
-  // Test_HL_DAC_GenerateWaveform(&hdac1, &hiwdg); // Commented out blocking test
-
+  /* Initialize ADC Driver */
   if (HL_ADC_Init(&hadc1, &htim6) != ADC_OK)
   {
     Error_Handler();
   }
-  
   if (HL_ADC_Start() != ADC_OK)
   {
     Error_Handler();
   }
 
-
-
-
-
-
+  /* Initialize PWM Driver (20 MHz excitation signal) */
   HAL_PWM_Init(&htim1);
   HAL_PWM_SetFrequency(20000000UL);
   HAL_PWM_SetDutyCycle(50);
-  HAL_PWM_Start();
+  /* Note: PWM is NOT started here - FSM controls when to start excitation */
 
-  // Variables for DAC Waveform Generation
-  float dac_voltage = 0.0f;
-  float dac_step = 0.05f;
-  int dac_direction = 1;
+  /* Turn on Init LED to indicate successful initialization */
+  HL_GPIO_Write(HL_GPIO_LED_INIT, HL_GPIO_HIGH);
+
+  /* Hardware-visible alarm: external clock failed, running on MSI fallback. */
+  if (g_clock_fallback_active) {
+    (void)HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_HIGH);
+  }
+
+  /* ========================================================================== */
+  /*                            TEST FUNCTIONS                                  */
+  /*                    Uncomment ONE test at a time to verify                  */
+  /* ========================================================================== */
+
+  /* -------------------------------------------------------------------------- */
+  /* TEST 1: GPIO LED Blink Test                                                */
+  /* Verifies: HL_GPIO_Write, HL_GPIO_Toggle, all 4 LEDs                        */
+  /* Expected: Each LED blinks 3 times in sequence                              */
+  /* -------------------------------------------------------------------------- */
   
-  // Start DAC Channels
-  HL_DAC_Start(DAC_CH_FREQ_TUNE); // PA4 (Input to ADC)
-  HL_DAC_Start(DAC_CH_Q_FACTOR);  // PA5 (Output from ADC)
+  /*
+  for (int led = 0; led < 4; led++)
+  {
+    for (int i = 0; i < 3; i++)
+    {
+      HL_GPIO_Write((HL_GPIO_Pin_t)led, HL_GPIO_HIGH);
+      HAL_Delay(200);
+      HL_GPIO_Write((HL_GPIO_Pin_t)led, HL_GPIO_LOW);
+      HAL_Delay(200);
+    }
+  }
+  */
 
+  /* -------------------------------------------------------------------------- */
+  /* TEST 2: GPIO Button Read Test                                              */
+  /* Verifies: HL_GPIO_Read for button, active-low logic                        */
+  /* Expected: Press button -> Error LED ON, Release -> Error LED OFF           */
+  /* -------------------------------------------------------------------------- */
+  /*
+
+  while (1)
+  {
+    HAL_IWDG_Refresh(&hiwdg);
+    HL_GPIO_State_t btn_state;
+    HL_GPIO_Read(HL_GPIO_BTN_USER, &btn_state);
+    
+    if (btn_state == HL_GPIO_LOW)  // Button pressed (active-low)
+    {
+      HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_HIGH);
+      HL_GPIO_Toggle(HL_GPIO_LED_INIT);
+    }
+    else
+    {
+      HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_LOW);
+    }
+    HAL_Delay(10);
+  }
+  */
+
+  /* -------------------------------------------------------------------------- */
+  /* TEST 3: DAC Voltage Output Test                                            */
+  /* Verifies: HL_DAC_SetVoltage on both channels                               */
+  /* Expected: PA4 = 1.65V, PA5 = 2.5V (measure with multimeter)                */
+  /* -------------------------------------------------------------------------- */
+  /*
+  HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, 1.65f);  // PA4 = 1.65V (mid-range)
+  HL_DAC_SetVoltage(DAC_CH_Q_FACTOR, 2.5f);    // PA5 = 2.5V
+  while (1) { HAL_IWDG_Refresh(&hiwdg); HAL_Delay(100); }
+  */
+
+
+  /* -------------------------------------------------------------------------- */
+  /* TEST 4: DAC Triangle Wave Test                                             */
+  /* Verifies: DAC dynamic output, timing                                       */
+  /* Expected: Triangle wave on PA4 (0V to 3.3V), viewable on oscilloscope      */
+  /* -------------------------------------------------------------------------- */
+  /*
+  float voltage = 0.0f;
+  float step = 0.1f;
+  int direction = 1;
+  while (1)
+  {
+    HAL_IWDG_Refresh(&hiwdg);
+    HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, voltage);
+    voltage += step * direction;
+    if (voltage >= 3.3f) { voltage = 3.3f; direction = -1; }
+    if (voltage <= 0.0f) { voltage = 0.0f; direction = 1; }
+    HAL_Delay(5);
+  }
+  */
+
+  /* -------------------------------------------------------------------------- */
+  /* TEST 5: PWM Output Test                                                    */
+  /* Verifies: HAL_PWM_Start, 20 MHz output on PA9                              */
+  /* Expected: 20 MHz square wave on PA9 (measure with oscilloscope/freq counter)*/
+  /* -------------------------------------------------------------------------- */
+  /*
+  HAL_PWM_Start();
+  HL_GPIO_Write(HL_GPIO_LED_EXCITE, HL_GPIO_HIGH);  // Indicate PWM active
+  while (1) { HAL_IWDG_Refresh(&hiwdg); HAL_Delay(100); }
+  */
+
+  /* -------------------------------------------------------------------------- */
+  /* TEST 6: ADC Continuous Read Test                                           */
+  /* Verifies: ADC DMA buffer capture, HL_ADC_IsBufferReady                     */
+  /* Expected: Meas LED toggles when ADC buffer fills                           */
+  /* -------------------------------------------------------------------------- */
+  /*
+  HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, 3.2);
+  while (1)
+  {
+    HAL_IWDG_Refresh(&hiwdg);
+    if (HL_ADC_IsBufferReady())  // First check if a buffer is ready
+    {
+      uint16_t *buffer = HL_ADC_GetBuffer();  // Get the buffer (clears ready flag)
+      if (buffer != NULL && !HL_ADC_IsBufferEmpty(buffer))
+      {
+        HL_GPIO_Write(HL_GPIO_LED_MEAS, HL_GPIO_HIGH);  // LED ON = buffer has data
+      }
+      else
+      {
+        HL_GPIO_Write(HL_GPIO_LED_MEAS, HL_GPIO_LOW);   // LED OFF = buffer empty
+      }
+    }
+  }
+  */
+
+  /* -------------------------------------------------------------------------- */
+  /* TEST 7: ADC to DAC Passthrough Test                                        */
+  /* Verifies: Full ADC -> DAC chain (connect PA4 output to PC0 input)          */
+  /* Expected: PA5 mirrors average of ADC input                                 */
+  /* -------------------------------------------------------------------------- */
+  /*
+  while (1)
+  {
+    HAL_IWDG_Refresh(&hiwdg);
+    if (HL_ADC_IsBufferReady())
+    {
+      uint16_t* data = HL_ADC_GetBuffer();
+      if (data != NULL)
+      {
+        uint32_t sum = 0;
+        for (int i = 0; i < ADC_BUFFER_SIZE; i++) { sum += data[i]; }
+        uint16_t avg = sum / ADC_BUFFER_SIZE;
+        HL_DAC_SetRawValue(DAC_CH_Q_FACTOR, avg);
+        HL_GPIO_Toggle(HL_GPIO_LED_MEAS);
+      }
+    }
+    HAL_Delay(1);
+  }
+  */
+
+  /* -------------------------------------------------------------------------- */
+  /* TEST 8: HAL GPIO UI Test                                                   */
+  /* Verifies: HL_GPIO_Read, HL_GPIO_Write for button->LED                      */
+  /* Expected: Press button -> Error LED ON, Release -> Error LED OFF           */
+  /* -------------------------------------------------------------------------- */
+  /*
+  while (1)
+  {
+    HAL_IWDG_Refresh(&hiwdg);
+    HL_GPIO_State_t btn_state;
+    HL_GPIO_Read(HL_GPIO_BTN_USER, &btn_state);
+    uint8_t pressed = (btn_state == HL_GPIO_LOW) ? 1U : 0U;
+    HL_GPIO_Write(HL_GPIO_LED_ERR, pressed ? HL_GPIO_HIGH : HL_GPIO_LOW);
+    HAL_Delay(10);
+  }
+  */
+
+  /* ========================================================================== */
+  /*                         FSM INITIALIZATION                                 */
+  /* ========================================================================== */
 
   FSM_Init();
 
@@ -180,42 +360,7 @@ int main(void)
   while (1)
   {
     HAL_IWDG_Refresh(&hiwdg);
-    //HAL_PWM_Pulse_Update();
     FSM_RunOnce();
-    // 1. Generate Waveform on PA4 (DAC1)
-    HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, dac_voltage);
-    dac_voltage += (dac_step * dac_direction);
-    if (dac_voltage >= 3.3f) { dac_voltage = 3.3f; dac_direction = -1; }
-    else if (dac_voltage <= 0.0f) { dac_voltage = 0.0f; dac_direction = 1; }
-
-    // 2. Process ADC Buffer (Passthrough to PA5)
-    if (HL_ADC_IsBufferReady())
-    {
-        uint16_t* data = HL_ADC_GetBuffer();
-        if (data != NULL)
-        {
-            // Output the first sample of the buffer to PA5 (DAC2)
-            // Note: Outputting all 512 samples here would be too slow for the main loop
-            // and would block the waveform generation.
-            // We output the average or just the first sample to verify connectivity.
-            // For a true waveform reconstruction, we would need DAC DMA.
-            
-            // Let's output the average of the buffer to smooth out noise
-            uint32_t sum = 0;
-            for (int i = 0; i < ADC_BUFFER_SIZE; i++)
-            {
-                sum += data[i];
-            }
-            uint16_t avg = sum / ADC_BUFFER_SIZE;
-            HL_DAC_SetRawValue(DAC_CH_Q_FACTOR, avg);
-            
-            // Toggle Measure LED to indicate ADC activity
-            HAL_GPIO_TogglePin(MEAS_LED_GPIO_Port, MEAS_LED_Pin);
-        }
-        HL_ADC_ClearBufferReady();
-    }
-
-    HAL_Delay(1); // Small delay to control waveform frequency
 
     /* USER CODE END WHILE */
 
@@ -243,7 +388,10 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
+  /* Primary clock plan: HSE + PLL. If HSE is missing/broken, fall back to MSI
+   * so the device stays controllable via USART2.
+   */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
@@ -255,27 +403,43 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
-    Error_Handler();
+    /* Fallback: MSI @ 4 MHz, no PLL. */
+    g_clock_fallback_active = 1U;
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI | RCC_OSCILLATORTYPE_LSI;
+    RCC_OscInitStruct.HSEState = RCC_HSE_OFF;
+    RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+    RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
+    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_OFF;
+    (void)HAL_RCC_OscConfig(&RCC_OscInitStruct);
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
   */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                              | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
-  {
-    Error_Handler();
+  if (!g_clock_fallback_active) {
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
+    {
+      /* If switching clocks fails, fall back to MSI. */
+      g_clock_fallback_active = 1U;
+    }
   }
-  HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
 
-  /** Enables the Clock Security System
-  */
-  HAL_RCC_EnableCSS();
+  if (g_clock_fallback_active) {
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
+    (void)HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0);
+  } else {
+    HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
+    /* Enables the Clock Security System */
+    HAL_RCC_EnableCSS();
+  }
 }
 
 /**
@@ -531,7 +695,7 @@ static void MX_TIM6_Init(void)
   {
     Error_Handler();
   }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
   {
@@ -632,6 +796,12 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
+  /* DMA1_Channel6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
+  /* DMA1_Channel7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
 
 }
 
@@ -661,7 +831,7 @@ static void MX_GPIO_Init(void)
                           |NINA_DTR_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, ERR_LED_Pin|ERR_LEDB6_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(ERR_LED_GPIO_Port, ERR_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -691,12 +861,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : ERR_LED_Pin ERR_LEDB6_Pin */
-  GPIO_InitStruct.Pin = ERR_LED_Pin|ERR_LEDB6_Pin;
+  /*Configure GPIO pin : ERR_LED_Pin */
+  GPIO_InitStruct.Pin = ERR_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(ERR_LED_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA8 */
   GPIO_InitStruct.Pin = GPIO_PIN_8;
@@ -723,8 +893,8 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-  // Turn on Error LED (PB6)
-  HAL_GPIO_WritePin(GPIOB, ERR_LED_Pin, GPIO_PIN_SET);
+  // Turn on Error LED (PB1)
+  HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_HIGH);
   __disable_irq();
   while (1)
   {

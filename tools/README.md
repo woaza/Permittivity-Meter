@@ -19,16 +19,33 @@ pip install -r tools/requirements.txt
 python tools/pc_cli.py --port COM7
 ```
 
+On reset/power-up the firmware emits `STAT:BOOT_V2` once (a quick sanity check
+that the USART2→ST-LINK VCP TX path is working).
+
+If the firmware had to fall back to MSI because the external clock failed, it will also emit
+`STAT:UART_RX:POLL` to indicate the RX path is being serviced via polling (not interrupts).
+
 Supported interactive commands:
 
 - `conn` – send `CMD:CONN`, expect `STAT:RDY`
 - `cal` – run calibration (`CMD:CAL`)
 - `meas` – trigger snow measurement (`CMD:MEAS`)
+- `manual-on` / `manual-off` – enter/exit manual mode (`CMD:MANUAL:*`) (aliases: `manual_on`, `manual_off`)
 - `btn-press` / `btn-release` – synthesize button edges via `CMD:BTN:*`
 - `leds` – request current LED state snapshot (`CMD:LEDS`)
 - `lcd` – dump both LCD lines (`CMD:LCD`)
 - `log` – dump the buffered debug log entries (`CMD:LOG`)
 - `trace` – stream the latest RF ADC sweep samples (`CMD:TRACE`)
+- `hal-init` – init the HAL board module (`CMD:HAL:INIT`) (requires manual mode)
+- `hal-*` shortcuts – convenience wrappers for `CMD:HAL:*` (requires manual mode):
+	- `hal-led-set <id> <0/1>`, `hal-led-get <id>`, `hal-led-toggle <id>`
+	- `hal-adc-read`, `hal-adc-raw`
+	- `hal-dac-set <ch> <voltage>`, `hal-dac-raw <ch> <value>`
+	- `hal-gain-set <level>`, `hal-gain-get`
+	- `hal-btn-read`
+	- `hal-nina-rst <0/1>`, `hal-nina-stop <0/1>`
+	- `hal-lcd-set <0/1> <text>`
+	- `hal-pwm-start`, `hal-pwm-stop`, `hal-pwm-get`, `hal-pwm-freq <hz>`, `hal-pwm-duty <0..100>`
 - `send <RAW>` – transmit an arbitrary line verbatim
 - `exit` / `quit` – leave the CLI
 
@@ -75,10 +92,19 @@ summaries, and reset controls, launch the PySimpleGUI tool:
 python tools/pc_ui.py --port COM4
 ```
 
-The UI automatically issues `CMD:CONN` on connect, exposes buttons for
-`CAL`, `MEAS`, trace capture, button press/release, and provides a raw
-Bluetooth-style send box. The ADC/DAC confirmation panel updates with the
-latest `DAT:RES` frame plus the minimum amplitude found in the current RF
-trace so you can quickly sanity-check values. LED, LCD, and log panes now
-refresh automatically every couple of seconds so state changes pushed by the
-MCU appear without manual refresh clicks.
+The UI issues `CMD:CONN` on connect and renders a device-like panel:
+
+- Clear sections for different hardware blocks:
+	- LEDs (indicator + HAL set/get/toggle)
+	- LCD (snapshot + HAL set)
+	- Button (simulate via `CMD:BTN:*` + read physical state via `CMD:HAL:BTN:READ`)
+	- DAC (sliders + raw set)
+	- ADC (read volts/raw)
+	- PWM / excitation (start/stop/get + set freq/duty)
+	- RF gain (set/get)
+	- NINA (RST/STOP control)
+- Manual mode toggle (Handbetrieb) so HAL commands are unlocked (`CMD:MANUAL:ON/OFF`).
+- RF mock controls (e.g., `CMD:MOCK:RF:RES/NOISE/BASE` and `CMD:MOCK:RF:FAIL:*`).
+- Refresh button and optional auto-refresh polling (useful if you don’t rely on `STAT:HW:*` push frames).
+
+It updates primarily from incoming `DAT:LCD:*` and `STAT:HW:*` frames. On the first `STAT:RDY`/`STAT:MANUAL` after connect it requests a one-time snapshot via `CMD:LEDS` and `CMD:LCD`.

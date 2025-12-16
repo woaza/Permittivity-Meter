@@ -31,6 +31,10 @@ COMMAND_MAP = {
     "conn": "CMD:CONN",
     "cal": "CMD:CAL",
     "meas": "CMD:MEAS",
+    "manual-on": "CMD:MANUAL:ON",
+    "manual-off": "CMD:MANUAL:OFF",
+    "manual_on": "CMD:MANUAL:ON",
+    "manual_off": "CMD:MANUAL:OFF",
     "btn-press": "CMD:BTN:PRESS",
     "btn-release": "CMD:BTN:RELEASE",
     "leds": "CMD:LEDS",
@@ -65,6 +69,30 @@ class SerialClient:
         self._stop.set()
         self._reader.join(timeout=0.5)
         self._serial.close()
+
+    def reset_target(self, pulse_s: float = 0.08) -> bool:
+        """Try to reset the target MCU using serial control lines.
+
+        Many USB-UART bridges can route DTR/RTS to the MCU reset circuit.
+        If the hardware doesn't support this, the method returns False.
+        """
+
+        # Some backends / adapters may not expose these attributes.
+        if not hasattr(self._serial, "setDTR") or not hasattr(self._serial, "setRTS"):
+            print("[WARN] Serial backend does not support DTR/RTS reset")
+            return False
+
+        try:
+            # Common convention: DTR low pulse triggers reset (inverted through transistor).
+            self._serial.setDTR(False)
+            self._serial.setRTS(False)
+            time.sleep(max(0.01, pulse_s))
+            self._serial.setDTR(True)
+            self._serial.setRTS(True)
+            return True
+        except Exception as exc:  # pragma: no cover
+            print(f"[WARN] Failed to toggle DTR/RTS for reset: {exc}")
+            return False
 
     def _rx_worker(self) -> None:
         while not self._stop.is_set():
@@ -120,6 +148,19 @@ def dispatch_command(line: str, client: SerialClient) -> None:
     if line in ("quit", "exit"):
         raise KeyboardInterrupt
 
+    if line == "reset":
+        # Preferred: ask firmware to reboot (works over ST-LINK VCP).
+        client.send_line("CMD:RESET")
+
+        # Best-effort fallback: toggle control lines (only works if wired).
+        ok = client.reset_target()
+        if not ok:
+            print("[WARN] DTR/RTS reset not available.")
+
+        # Give the target a moment to reboot and print boot frames.
+        time.sleep(0.8)
+        return
+
     if line.startswith("send "):
         _, payload = line.split(" ", 1)
         client.send_line(payload)
@@ -130,10 +171,102 @@ def dispatch_command(line: str, client: SerialClient) -> None:
         client.send_line(mapped)
         return
 
+    parts = line.split()
+    if not parts:
+        return
+
+    cmd = parts[0]
+    args = parts[1:]
+
+    if cmd == "hal-init":
+        client.send_line("CMD:HAL:INIT")
+        return
+
+    if cmd == "hal-led-set" and len(args) == 2:
+        led_id, state = args
+        client.send_line(f"CMD:HAL:LED:SET:{led_id}:{state}")
+        return
+
+    if cmd == "hal-led-get" and len(args) == 1:
+        client.send_line(f"CMD:HAL:LED:GET:{args[0]}")
+        return
+
+    if cmd == "hal-led-toggle" and len(args) == 1:
+        client.send_line(f"CMD:HAL:LED:TOGGLE:{args[0]}")
+        return
+
+    if cmd == "hal-adc-read" and len(args) == 0:
+        client.send_line("CMD:HAL:ADC:READ")
+        return
+
+    if cmd == "hal-adc-raw" and len(args) == 0:
+        client.send_line("CMD:HAL:ADC:RAW")
+        return
+
+    if cmd == "hal-dac-set" and len(args) == 2:
+        ch, voltage = args
+        client.send_line(f"CMD:HAL:DAC:SET:{ch}:{voltage}")
+        return
+
+    if cmd == "hal-dac-raw" and len(args) == 2:
+        ch, raw = args
+        client.send_line(f"CMD:HAL:DAC:RAW:{ch}:{raw}")
+        return
+
+    if cmd == "hal-gain-set" and len(args) == 1:
+        client.send_line(f"CMD:HAL:GAIN:SET:{args[0]}")
+        return
+
+    if cmd == "hal-gain-get" and len(args) == 0:
+        client.send_line("CMD:HAL:GAIN:GET")
+        return
+
+    if cmd == "hal-btn-read" and len(args) == 0:
+        client.send_line("CMD:HAL:BTN:READ")
+        return
+
+    if cmd == "hal-nina-rst" and len(args) == 1:
+        client.send_line(f"CMD:HAL:NINA:RST:{args[0]}")
+        return
+
+    if cmd == "hal-nina-stop" and len(args) == 1:
+        client.send_line(f"CMD:HAL:NINA:STOP:{args[0]}")
+        return
+
+    if cmd == "hal-lcd-set" and len(args) >= 2:
+        line_idx = args[0]
+        text = " ".join(args[1:])
+        client.send_line(f"CMD:HAL:LCD:SET:{line_idx}:{text}")
+        return
+
+    if cmd == "hal-pwm-start" and len(args) == 0:
+        client.send_line("CMD:HAL:PWM:START")
+        return
+
+    if cmd == "hal-pwm-stop" and len(args) == 0:
+        client.send_line("CMD:HAL:PWM:STOP")
+        return
+
+    if cmd == "hal-pwm-get" and len(args) == 0:
+        client.send_line("CMD:HAL:PWM:GET")
+        return
+
+    if cmd == "hal-pwm-freq" and len(args) == 1:
+        client.send_line(f"CMD:HAL:PWM:FREQ:{args[0]}")
+        return
+
+    if cmd == "hal-pwm-duty" and len(args) == 1:
+        client.send_line(f"CMD:HAL:PWM:DUTY:{args[0]}")
+        return
+
     print(
         "Unknown command. Supported: "
         + ", ".join(sorted(COMMAND_MAP.keys()))
-        + ", send <RAW>, exit",
+        + ", hal-init, hal-led-set <id> <0/1>, hal-led-get <id>, hal-led-toggle <id>,"
+        + " hal-adc-read, hal-adc-raw, hal-dac-set <ch> <voltage>, hal-dac-raw <ch> <value>,"
+        + " hal-gain-set <level>, hal-gain-get, hal-btn-read, hal-nina-rst <0/1>, hal-nina-stop <0/1>,"
+        + " hal-lcd-set <0/1> <text>, hal-pwm-start, hal-pwm-stop, hal-pwm-get, hal-pwm-freq <hz>, hal-pwm-duty <0..100>,"
+        + " reset, send <RAW>, exit",
     )
 
 

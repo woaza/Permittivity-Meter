@@ -10,6 +10,7 @@
 #include "bt_manager.h"
 #include "debug_log.h"
 #include "rf_measure.h"
+#include "usb_cdc_bridge.h"
 
 #define FSM_EVENT_QUEUE_SIZE 8U
 #define CAL_BLINK_PERIOD_TICKS 4U
@@ -36,6 +37,7 @@ static void FSM_TransitionTo(AppState_t new_state, const char *reason);
 static void FSM_OnEnter(AppState_t new_state);
 static void FSM_HandleInit(void);
 static void FSM_HandleIdle(void);
+static void FSM_HandleManual(void);
 static void FSM_HandleCalibration(void);
 static void FSM_HandleMeasureSearch(void);
 static void FSM_HandleCalculation(void);
@@ -44,6 +46,9 @@ static void FSM_StartCalibration(const char *reason_tag);
 static void FSM_StartMeasurement(const char *reason_tag);
 static uint8_t FSM_IsMeasurementValid(const MeasurementResult_t *result);
 static void FSM_UpdateLCD(const char *line0, const char *line1);
+
+static void fmt_fixed_2(char *out, size_t out_len, float value);
+static void FSM_ShowResultOnLCD(const MeasurementResult_t *result);
 
 static void enqueue_event(FSM_Event_t evt)
 {
@@ -88,6 +93,20 @@ static void handle_bt_event(BT_Event_t evt)
     case BT_EVENT_MEAS:
         enqueue_event(FSM_EVENT_BT_MEAS);
         Debug_LogEvent("BT", "MEAS");
+        break;
+    case BT_EVENT_MANUAL_ON:
+        Debug_LogEvent("BT", "MAN_ON");
+        /* Allow dropping into manual mode from any state. */
+        FSM_TransitionTo(STATE_MANUAL_OPERATION, "bt_man_on");
+        break;
+    case BT_EVENT_MANUAL_OFF:
+        Debug_LogEvent("BT", "MAN_OFF");
+        if (s_state == STATE_MANUAL_OPERATION) {
+            BT_SendStatus("MANUAL_OFF");
+            FSM_TransitionTo(STATE_IDLE, "bt_man_off");
+        } else {
+            BT_SendStatus("MANUAL_NOT_ACTIVE");
+        }
         break;
     default:
         break;
@@ -149,6 +168,8 @@ static void FSM_TransitionTo(AppState_t new_state, const char *reason)
 
 static void FSM_OnEnter(AppState_t new_state)
 {
+    BT_SetManualMode((new_state == STATE_MANUAL_OPERATION) ? 1U : 0U);
+
     switch (new_state) {
     case STATE_INIT:
         s_queue_head = 0U;
@@ -192,6 +213,25 @@ static void FSM_OnEnter(AppState_t new_state)
         FSM_UpdateLCD("IDLE", s_calibration.is_valid ? "Ready" : "Need CAL");
         break;
 
+    case STATE_MANUAL_OPERATION:
+        /* Safety: stop any measurement-related outputs immediately. */
+        BSP_RF_EnableExcitation(0U);
+        BSP_RF_SetOpAmpEnable(0U);
+        s_calibration_pending = 0U;
+        s_measurement_pending = 0U;
+        s_result_pending = 0U;
+        s_cal_blink_ticks = 0U;
+        s_cal_led_level = 0U;
+
+        BSP_LED_Set(LED_STATUS, 1U);
+        BSP_LED_Set(LED_MEAS, 0U);
+        BSP_LED_Set(LED_EXCITE, 0U);
+        BSP_LED_Set(LED_ERROR, 0U);
+
+        BT_SendStatus("MANUAL_ON");
+        FSM_UpdateLCD("MANUAL", "HAL cmds OK");
+        break;
+
     case STATE_CALIBRATION:
         s_calibration_pending = 1U;
         s_cal_blink_ticks = 0U;
@@ -215,10 +255,14 @@ static void FSM_OnEnter(AppState_t new_state)
         break;
 
     case STATE_CALCULATION:
+        /* RESULT state: show last measurement and wait for button press.
+         * After every successful measurement the system requires a new CAL.
+         */
         s_result_pending = 1U;
         BSP_RF_EnableExcitation(0U);
         BSP_LED_Set(LED_EXCITE, 0U);
-        FSM_UpdateLCD("RESULT", "Sending...");
+        s_calibration.is_valid = 0U;
+        FSM_ShowResultOnLCD(&s_last_result);
         break;
 
     case STATE_ERROR:
@@ -253,7 +297,7 @@ static void FSM_StartCalibration(const char *reason_tag)
 static void FSM_StartMeasurement(const char *reason_tag)
 {
     if (!s_calibration.is_valid) {
-        BT_SendStatus("ERR");
+        BT_SendStatus("ERR:NEED_CAL");
         Debug_LogEvent("FSM", "meas_reject");
         return;
     }
@@ -284,6 +328,33 @@ static void FSM_HandleIdle(void)
         } else {
             FSM_StartCalibration("btn_cal");
         }
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void FSM_HandleManual(void)
+{
+    const FSM_Event_t evt = dequeue_event();
+    switch (evt) {
+    case FSM_EVENT_BT_CONN:
+        BT_SendStatus("MANUAL");
+        break;
+
+    case FSM_EVENT_BT_MANUAL_OFF:
+        BT_SendStatus("MANUAL_OFF");
+        FSM_TransitionTo(STATE_IDLE, "bt_man_off");
+        break;
+
+    case FSM_EVENT_BT_MANUAL_ON:
+        BT_SendStatus("MANUAL");
+        break;
+
+    case FSM_EVENT_BT_CAL:
+    case FSM_EVENT_BT_MEAS:
+        BT_SendStatus("MANUAL_ACTIVE");
         break;
 
     default:
@@ -345,9 +416,10 @@ static void FSM_HandleMeasureSearch(void)
         BSP_RF_EnableExcitation(0U);
         BSP_LED_Set(LED_EXCITE, 0U);
         if (FSM_IsMeasurementValid(&s_last_result)) {
-            FSM_TransitionTo(STATE_CALCULATION, "meas_done");
+            BSP_LED_Set(LED_MEAS, 0U);
+            FSM_TransitionTo(STATE_CALCULATION, "meas_ok");
         } else {
-            BT_SendStatus("ERR");
+            BT_SendStatus("ERR:MEAS_INVALID");
             Debug_LogEvent("RF_MEAS", "invalid");
             FSM_TransitionTo(STATE_ERROR, "meas_fail");
         }
@@ -364,21 +436,79 @@ static void FSM_HandleMeasureSearch(void)
 
 static void FSM_HandleCalculation(void)
 {
-    if (!s_result_pending) {
+    if (s_result_pending) {
+        /* Send result once over the host link as well. */
+        BT_SendResult(s_last_result);
+        s_result_pending = 0U;
+    }
+
+    const FSM_Event_t evt = dequeue_event();
+    switch (evt) {
+    case FSM_EVENT_BUTTON_PRESS:
+        FSM_TransitionTo(STATE_IDLE, "btn_ack");
+        break;
+
+    case FSM_EVENT_BT_CAL:
+        FSM_StartCalibration("bt_cal_after_result");
+        break;
+
+    case FSM_EVENT_BT_MEAS:
+        /* Measurement requires a fresh CAL after each result. */
+        BT_SendStatus("ERR:NEED_CAL");
+        break;
+
+    case FSM_EVENT_BT_CONN:
+        BT_SendStatus("RDY");
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void fmt_fixed_2(char *out, size_t out_len, float value)
+{
+    if (out == NULL || out_len == 0U) {
         return;
     }
 
-    BT_SendResult(s_last_result);
-    BSP_LED_Set(LED_MEAS, 0U);
-    s_result_pending = 0U;
-
-    if (s_calibration.is_valid) {
-        FSM_TransitionTo(STATE_IDLE, "calc_done");
-    } else {
-        FSM_TransitionTo(STATE_ERROR, "calc_no_cal");
+    if (!isfinite(value)) {
+        (void)snprintf(out, out_len, "nan");
+        return;
     }
 
-    return;
+    const float scaled_f = value * 100.0f;
+    const int32_t scaled = (int32_t)lroundf(scaled_f);
+    const int32_t abs_scaled = (scaled < 0) ? -scaled : scaled;
+    const int32_t ip = abs_scaled / 100;
+    const int32_t fp = abs_scaled % 100;
+    if (scaled < 0) {
+        (void)snprintf(out, out_len, "-%ld.%02ld", (long)ip, (long)fp);
+    } else {
+        (void)snprintf(out, out_len, "%ld.%02ld", (long)ip, (long)fp);
+    }
+}
+
+static void FSM_ShowResultOnLCD(const MeasurementResult_t *result)
+{
+    char line0[LCD_CHAR_COUNT + 1U];
+    char line1[LCD_CHAR_COUNT + 1U];
+    char er[10];
+    char ei[10];
+    char dens[10];
+
+    if (result == NULL) {
+        FSM_UpdateLCD("RESULT", "(no data)");
+        return;
+    }
+
+    fmt_fixed_2(er, sizeof(er), result->epsilon_real);
+    fmt_fixed_2(ei, sizeof(ei), result->epsilon_imag);
+    fmt_fixed_2(dens, sizeof(dens), result->snow_density);
+
+    (void)snprintf(line0, sizeof(line0), "ER %s EI %s", er, ei);
+    (void)snprintf(line1, sizeof(line1), "D %skg/m3", dens);
+    FSM_UpdateLCD(line0, line1);
 }
 
 static void FSM_HandleError(void)
@@ -426,6 +556,7 @@ static uint8_t FSM_IsMeasurementValid(const MeasurementResult_t *result)
 
 void FSM_RunOnce(void)
 {
+    PC_HostBridge_Poll();
     BT_MockPump();
     handle_bt_event(BT_PopEvent());
     process_button();
@@ -437,6 +568,10 @@ void FSM_RunOnce(void)
 
     case STATE_IDLE:
         FSM_HandleIdle();
+        break;
+
+    case STATE_MANUAL_OPERATION:
+        FSM_HandleManual();
         break;
 
     case STATE_CALIBRATION:

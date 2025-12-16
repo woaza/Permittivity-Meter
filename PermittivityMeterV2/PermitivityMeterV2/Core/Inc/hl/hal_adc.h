@@ -76,10 +76,11 @@ extern "C"
 	bool HL_ADC_IsBufferReady(void);
 
 	/**
-	 * @brief Clear the buffer ready flag (call after processing)
-	 * @retval None
+	 * @brief Check if the buffer contains all zeros (empty)
+	 * @param buffer: Pointer to the buffer to check
+	 * @retval bool: true if all values are zero, false if any non-zero value exists
 	 */
-	void HL_ADC_ClearBufferReady(void);
+	bool HL_ADC_IsBufferEmpty(const uint16_t *buffer);
 
 	#ifdef __cplusplus
 }

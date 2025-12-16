@@ -111,8 +111,6 @@ extern UART_HandleTypeDef huart4;
 #define NINA_DTR_GPIO_Port GPIOC
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
-#define ERR_LEDB6_Pin GPIO_PIN_6
-#define ERR_LEDB6_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
