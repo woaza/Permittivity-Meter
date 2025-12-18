@@ -134,6 +134,15 @@ typedef enum
     HL_GPIO_NINA_RST   = 7,  /**< NINA Reset - PA11 */
     HL_GPIO_NINA_STOP  = 8,  /**< NINA Stop - PA12 */
     HL_GPIO_NINA_DTR   = 9,  /**< NINA DTR - PB11 */
+    HL_GPIO_NINA_DSR   = 10, /**< NINA DSR - PB12 */
+
+    /* NINA Status LEDs */
+    HL_GPIO_NINA_LED_RED   = 11, /**< NINA Red LED - PC15 */
+    HL_GPIO_NINA_LED_BLUE  = 12, /**< NINA Blue LED - PC14 */
+    HL_GPIO_NINA_LED_GREEN = 13, /**< NINA Green LED - PC2 */
+
+    /* Other Control */
+    HL_GPIO_OP_DIS     = 14, /**< Op-Amp Disable - PC4 */
 
     HL_GPIO_PIN_COUNT        /**< Total number of defined pins */
 } HL_GPIO_Pin_t;

@@ -100,8 +100,8 @@ static void MX_TIM3_Init(void);
 /*
 static void uart2_panic_print(const char *msg)
 {
-  /* Best-effort: bring up USART2 using the current clock domain (even if
-   /* SystemClock_Config() failed and we are still on the reset-default MSI).
+   Best-effort: bring up USART2 using the current clock domain (even if
+    SystemClock_Config() failed and we are still on the reset-default MSI).
 
   (void)MX_USART2_UART_Init();
   const char *prefix = "STAT:ERR:";

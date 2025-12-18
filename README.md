@@ -89,15 +89,31 @@ After that, `CMD:CONN` should respond with exactly one `STAT:RDY`.
 
 ### Pinout Configuration
 
+> [!NOTE]
+> This is a summary. For the authoritative pinout, see [Dokumentation/Pinout_config/README.md](Dokumentation/Pinout_config/README.md).
+
 | Pin | Name | Function | Description |
 | :--- | :--- | :--- | :--- |
-| **PC13** | `B1` | **User Button** | Triggers Calibration (1st press) or Measurement (2nd press). |
-| **PA6** | `INIT_LED` | **LED (Green)** | Indicates System Initialization / Idle State. |
-| **PA7** | `MEAS_LED` | **LED (Blue)** | Indicates Measurement/Calibration in progress. |
-| **PC7** | `EXCITE_LED` | **LED (Yellow)** | Indicates RF Excitation is Active. |
-| **PB6** | `ERR_LED` | **LED (Red)** | Indicates Error State. |
+| **PB0** | `SQR_20M_OUT` | **PWM Output** | 20 MHz Excitation Signal (TIM3_CH3). |
 | **PA4** | `FRQ_TN` | **DAC1 Ch1** | Frequency Tuning Varicap Voltage. |
 | **PA5** | `Q_FACT_TN` | **DAC1 Ch2** | Q-Factor Tuning Varicap Voltage. |
+| **PC0** | `NOTCH_AMP_IN` | **ADC1 IN1** | Notch Filter Output Amplitude. |
+| **PC13** | `B1` | **User Button** | Wake-up / Manual Trigger. |
+| **PB8** | `INIT_LED` | **LED (Green)** | System Initialization / Status. |
+| **PC9** | `MEAS_LED` | **LED (Yellow)** | Measurement in Progress. |
+| **PC8** | `EXCITE_LED` | **LED (Blue)** | RF Excitation Active. |
+| **PC6** | `ERR_LED` | **LED (Red)** | Error State. |
+| **PC10** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
+| **PC11** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
+| **PB7** | `NINA_CTS` | **UART4 CTS** | Bluetooth Flow Control (CTS). |
+| **PA15** | `NINA_RTS` | **UART4 RTS** | Bluetooth Flow Control (RTS). |
+| **PA11** | `NINA_RST` | **GPIO Output** | NINA Reset (Active Low). |
+| **PA12** | `NINA_STOP` | **GPIO Output** | NINA Stop Mode (Active High). |
+| **PB11** | `NINA_DTR` | **GPIO Output** | NINA DTR (Wake-up). |
+| **PB12** | `NINA_DSR` | **GPIO Input** | NINA DSR (Ready Status). |
+| **PC3** | `GAIN_SLCT_1` | **GPIO Output** | RF Gain Select Bit 0. |
+| **PC1** | `GAIN_SLCT_2` | **GPIO Output** | RF Gain Select Bit 1. |
+| **PC4** | `OP_DIS` | **GPIO Output** | Op-Amp Disable. |
 | **PA9** | `SQR_20M_OUT` | **TIM1 CH2** | 20 MHz PWM Excitation Signal. |
 | **PA1** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
 | **PA0** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
@@ -389,6 +405,15 @@ In addition, the firmware pushes the updated buffer as `DAT:LCD:L<line>:<text>`.
 | :--- | :--- | :--- |
 | `CMD:HAL:NINA:RST:<state>` | Set reset pin (0=reset, 1=run) | `STAT:HAL_NINA:RESET` or `STAT:HAL_NINA:RUN` |
 | `CMD:HAL:NINA:STOP:<state>` | Set stop pin (0=run, 1=stop) | `STAT:HAL_NINA:RUNNING` or `STAT:HAL_NINA:STOPPED` |
+| `CMD:HAL:NINA:DTR:<state>` | Set DTR pin (0=low, 1=high) | `STAT:HAL_NINA_DTR_OK` + `STAT:HW:NINA:DTR:<state>` |
+| `CMD:HAL:NINA:DSR:READ` | Read DSR pin state | `STAT:HAL_NINA_DSR_OK` + `STAT:HW:NINA:DSR:<state>` |
+| `CMD:HAL:NINA:LED:<id>:READ` | Read NINA LED (0=R, 1=B, 2=G) | `STAT:HAL_NINA_LED_OK` + `STAT:HW:NINA:LED:<id>:<state>` |
+
+#### Op-Amp Control
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:OPAMP:DIS:<state>` | Set Op-Amp Disable (0=en, 1=dis) | `STAT:HAL_OPAMP_OK` + `STAT:HW:OPAMP:DIS:<state>` |
 
 #### Initialization
 

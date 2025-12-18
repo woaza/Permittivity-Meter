@@ -15,7 +15,7 @@ The goal is to create a shield with the external circuit (Twin-T notch filter, 7
 
 | Pin | User Label | Function | Signal Type | Connector | Pin # | Specifications | HAL Function | Purpose |
 |-----|------------|----------|-------------|-----------|-------|----------------|--------------|---------|
-| PA9 | SQR_20M_OUT | TIM1_CH2 | PWM Output | CN10 | 21 | 20 MHz Square Wave, 3.3Vpp, 50% Duty | `HAL_TIM_PWM_Start()` | Drives 7th-order Chebyshev LC filter for sine conversion (THD <1%) |
+| PB0 | SQR_20M_OUT | TIM3_CH3 | PWM Output | CN10 | 34 | 20 MHz Square Wave, 3.3Vpp, 50% Duty | `HAL_TIM_PWM_Start()` | Drives 7th-order Chebyshev LC filter for sine conversion (THD <1%) |
 | PA8 | MCO | MCO Output | Clock Output | CN10 | 23 | HSE clock output (8 MHz) | `HAL_RCC_MCOConfig()` | External clock monitoring/debugging |
 
 ---

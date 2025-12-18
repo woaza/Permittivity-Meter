@@ -650,7 +650,75 @@ static bool handle_hal_nina_command(const char *payload)
         }
         return true;
     }
+
+    /* CMD:HAL:NINA:DTR:<state>  (0=low, 1=high) */
+    if (strncmp(payload, "DTR:", 4) == 0) {
+        uint32_t state = 0;
+        if (!parse_uint_arg(payload + 4, &state)) {
+            BT_SendStatus("HAL_NINA_ERR");
+            return true;
+        }
+        
+        if (HalBoard_NINA_SetDTR((uint8_t)state) == HAL_BOARD_OK) {
+            BT_SendStatus("HAL_NINA_DTR_OK");
+            output_hw_framef("NINA:DTR:%u", (unsigned)state);
+        } else {
+            BT_SendStatus("HAL_NINA_ERR");
+        }
+        return true;
+    }
+
+    /* CMD:HAL:NINA:DSR:READ */
+    if (strncmp(payload, "DSR:READ", 8) == 0) {
+        uint8_t state = 0;
+        if (HalBoard_NINA_GetDSR(&state) == HAL_BOARD_OK) {
+            BT_SendStatus("HAL_NINA_DSR_OK");
+            output_hw_framef("NINA:DSR:%u", (unsigned)state);
+        } else {
+            BT_SendStatus("HAL_NINA_ERR");
+        }
+        return true;
+    }
+
+    /* CMD:HAL:NINA:LED:<id>:READ */
+    if (strncmp(payload, "LED:", 4) == 0) {
+        uint32_t id = 0;
+        if (!parse_uint_arg(payload + 4, &id)) {
+            BT_SendStatus("HAL_NINA_ERR");
+            return true;
+        }
+        
+        uint8_t state = 0;
+        if (HalBoard_NINA_GetLED((uint8_t)id, &state) == HAL_BOARD_OK) {
+            BT_SendStatus("HAL_NINA_LED_OK");
+            output_hw_framef("NINA:LED:%u:%u", (unsigned)id, (unsigned)state);
+        } else {
+            BT_SendStatus("HAL_NINA_ERR");
+        }
+        return true;
+    }
     
+    return false;
+}
+
+static bool handle_hal_opamp_command(const char *payload)
+{
+    /* CMD:HAL:OPAMP:DIS:<state> (0=enable, 1=disable) */
+    if (strncmp(payload, "DIS:", 4) == 0) {
+        uint32_t state = 0;
+        if (!parse_uint_arg(payload + 4, &state)) {
+            BT_SendStatus("HAL_OPAMP_ERR");
+            return true;
+        }
+        
+        if (HalBoard_OpAmp_SetDisable((uint8_t)state) == HAL_BOARD_OK) {
+            BT_SendStatus("HAL_OPAMP_OK");
+            output_hw_framef("OPAMP:DIS:%u", (unsigned)state);
+        } else {
+            BT_SendStatus("HAL_OPAMP_ERR");
+        }
+        return true;
+    }
     return false;
 }
 
@@ -768,6 +836,10 @@ static bool handle_hal_command(const char *buffer)
 
     if (strncmp(payload, "PWM:", 4) == 0) {
         return handle_hal_pwm_command(payload + 4);
+    }
+
+    if (strncmp(payload, "OPAMP:", 6) == 0) {
+        return handle_hal_opamp_command(payload + 6);
     }
     
     /* CMD:HAL:INIT - Initialize HAL Board */

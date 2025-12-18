@@ -337,3 +337,76 @@ HalBoard_Status_t HalBoard_NINA_SetStop(uint8_t state)
 
     return HAL_BOARD_OK;
 }
+
+HalBoard_Status_t HalBoard_NINA_SetDTR(uint8_t state)
+{
+    HL_GPIO_State_t gpio_state = state ? HL_GPIO_HIGH : HL_GPIO_LOW;
+    
+    if (HL_GPIO_Write(HL_GPIO_NINA_DTR, gpio_state) != GPIO_OK)
+    {
+        return HAL_BOARD_ERROR;
+    }
+
+    return HAL_BOARD_OK;
+}
+
+HalBoard_Status_t HalBoard_NINA_GetDSR(uint8_t *state)
+{
+    if (state == NULL)
+    {
+        return HAL_BOARD_ERROR_INVALID_PARAM;
+    }
+
+    HL_GPIO_State_t gpio_state = HL_GPIO_LOW;
+    
+    if (HL_GPIO_Read(HL_GPIO_NINA_DSR, &gpio_state) != GPIO_OK)
+    {
+        return HAL_BOARD_ERROR;
+    }
+
+    *state = (gpio_state == HL_GPIO_HIGH) ? 1U : 0U;
+    return HAL_BOARD_OK;
+}
+
+HalBoard_Status_t HalBoard_NINA_GetLED(uint8_t led_id, uint8_t *state)
+{
+    if (state == NULL || led_id > 2)
+    {
+        return HAL_BOARD_ERROR_INVALID_PARAM;
+    }
+
+    HL_GPIO_Pin_t pin;
+    switch (led_id)
+    {
+        case 0: pin = HL_GPIO_NINA_LED_RED; break;
+        case 1: pin = HL_GPIO_NINA_LED_BLUE; break;
+        case 2: pin = HL_GPIO_NINA_LED_GREEN; break;
+        default: return HAL_BOARD_ERROR_INVALID_PARAM;
+    }
+
+    HL_GPIO_State_t gpio_state = HL_GPIO_LOW;
+    
+    if (HL_GPIO_Read(pin, &gpio_state) != GPIO_OK)
+    {
+        return HAL_BOARD_ERROR;
+    }
+
+    *state = (gpio_state == HL_GPIO_HIGH) ? 1U : 0U;
+    return HAL_BOARD_OK;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Op-Amp Control                                */
+/* -------------------------------------------------------------------------- */
+
+HalBoard_Status_t HalBoard_OpAmp_SetDisable(uint8_t state)
+{
+    HL_GPIO_State_t gpio_state = state ? HL_GPIO_HIGH : HL_GPIO_LOW;
+    
+    if (HL_GPIO_Write(HL_GPIO_OP_DIS, gpio_state) != GPIO_OK)
+    {
+        return HAL_BOARD_ERROR;
+    }
+
+    return HAL_BOARD_OK;
+}

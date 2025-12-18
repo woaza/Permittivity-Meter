@@ -170,6 +170,39 @@ HalBoard_Status_t HalBoard_NINA_SetReset(uint8_t state);
  */
 HalBoard_Status_t HalBoard_NINA_SetStop(uint8_t state);
 
+/**
+ * @brief Set NINA module DTR pin.
+ * @param state 0=low, 1=high
+ * @retval HalBoard_Status_t status
+ */
+HalBoard_Status_t HalBoard_NINA_SetDTR(uint8_t state);
+
+/**
+ * @brief Get NINA module DSR pin state.
+ * @param state Pointer to store state (0=low, 1=high)
+ * @retval HalBoard_Status_t status
+ */
+HalBoard_Status_t HalBoard_NINA_GetDSR(uint8_t *state);
+
+/**
+ * @brief Get NINA module LED state.
+ * @param led_id 0=RED, 1=BLUE, 2=GREEN
+ * @param state Pointer to store state (0=low, 1=high)
+ * @retval HalBoard_Status_t status
+ */
+HalBoard_Status_t HalBoard_NINA_GetLED(uint8_t led_id, uint8_t *state);
+
+/* -------------------------------------------------------------------------- */
+/*                              Op-Amp Control                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Set Op-Amp Disable pin.
+ * @param state 0=enable (low), 1=disable (high)
+ * @retval HalBoard_Status_t status
+ */
+HalBoard_Status_t HalBoard_OpAmp_SetDisable(uint8_t state);
+
 #ifdef __cplusplus
 }
 #endif
