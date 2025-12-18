@@ -41,6 +41,7 @@ static const GPIO_PinMap_t gpio_pin_map[HL_GPIO_PIN_COUNT] =
     /* HL_GPIO_RF_GAIN_1  */ { GAIN_SLCT_2_GPIO_Port, GAIN_SLCT_2_Pin },
     /* HL_GPIO_NINA_RST   */ { NINA_RST_GPIO_Port,   NINA_RST_Pin   },
     /* HL_GPIO_NINA_STOP  */ { NINA_STOP_GPIO_Port,  NINA_STOP_Pin  },
+    /* HL_GPIO_NINA_DTR   */ { NINA_DTR_GPIO_Port,   NINA_DTR_Pin   },
 };
 
 /* -------------------------------------------------------------------------- */

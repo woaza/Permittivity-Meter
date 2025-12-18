@@ -66,7 +66,7 @@ The goal is to create a shield with the external circuit (Twin-T notch filter, 7
 | Pin | User Label | Function | Signal Type | Connector | Pin # | Specifications | HAL Function | Purpose |
 |-----|------------|----------|-------------|-----------|-------|----------------|--------------|---------|
 | PC10 | NINA_TX | UART4_TX | Digital Output | CN7 | 1 | 115200 baud, 8N1 | `HAL_UART_Transmit()` | Sends AT commands and data to NINA-W152 |
-| PA1 | NINA_RX | UART4_RX | Digital Input | CN7 | 30 | 115200 baud, 8N1 | `HAL_UART_Receive()` | Receives responses from NINA-W152 |
+| PC11 | NINA_RX | UART4_RX | Digital Input | CN7 | 30 | 115200 baud, 8N1 | `HAL_UART_Receive()` | Receives responses from NINA-W152 |
 
 ### Hardware Flow Control
 
@@ -74,7 +74,6 @@ The goal is to create a shield with the external circuit (Twin-T notch filter, 7
 |-----|------------|----------|-------------|-----------|-------|-----------|---------|
 | PB7 | NINA_CTS | UART4_CTS | Digital Input | CN7 | 21 | NINA → MCU | Clear To Send - NINA ready to receive data |
 | PA15 | UART4_RTS | UART4_RTS | Digital Output | CN7 | 17 | MCU → NINA | Request To Send - MCU hardware flow control output |
-| PC11 | NINA_RTS | GPIO Input | Digital Input | CN7 | 2 | NINA → MCU | NINA RTS signal read-back (NINA's flow control status) |
 
 ### Module Control Signals
 
@@ -82,21 +81,21 @@ The goal is to create a shield with the external circuit (Twin-T notch filter, 7
 |-----|------------|----------|-------------|-----------|-------|---------------|--------------|---------|
 | PA11 | NINA_RST | GPIO Output | Digital Output | CN10 | 14 | LOW | Active LOW | Hardware reset (pull LOW to reset, HIGH to run) |
 | PA12 | NINA_STOP | GPIO Output | Digital Output | CN10 | 12 | LOW | Active HIGH | Low-power mode control (HIGH = stop, LOW = run) |
-| PC12 | NINA_DTR | GPIO Output | Digital Output | CN7 | 3 | LOW | Varies | Data Terminal Ready - wake-up / power control |
+| PB11 | NINA_DTR | GPIO Output | Digital Output | CN7 | 3 | LOW | Varies | Data Terminal Ready - wake-up / power control |
 
 ### NINA_DSR Signal (Data Set Ready)
 
 | Pin | User Label | Function | Signal Type | Connector | Pin # | Direction | Purpose |
 |-----|------------|----------|-------------|-----------|-------|-----------|---------|
-| PD2 | NINA_DSR | GPIO Input | Digital Input | CN7 | 4 | NINA → MCU | Data Set Ready - NINA ready/connected status |
+| PB12 | NINA_DSR | GPIO Input | Digital Input | CN7 | 4 | NINA → MCU | Data Set Ready - NINA ready/connected status |
 
 ### NINA Status LED Read-Back
 
 | Pin | User Label | Function | Signal Type | Connector | Pin # | Purpose |
 |-----|------------|----------|-------------|-----------|-------|---------|
-| PC1 | NINA_LED_RED | GPIO Input | Digital Input | CN7 | 36 | NINA module red LED status read-back |
-| PC2 | NINA_LED_BLUE | GPIO Input | Digital Input | CN7 | 35 | NINA module blue LED status read-back |
-| PC3 | NINA_LED_GREEN | GPIO Input | Digital Input | CN7 | 37 | NINA module green LED status read-back |
+| PC15 | NINA_LED_RED | GPIO Input | Digital Input | CN7 | 36 | NINA module red LED status read-back |
+| PC14 | NINA_LED_BLUE | GPIO Input | Digital Input | CN7 | 35 | NINA module blue LED status read-back |
+| PC2 | NINA_LED_GREEN | GPIO Input | Digital Input | CN7 | 37 | NINA module green LED status read-back |
 
 ---
 
@@ -104,8 +103,8 @@ The goal is to create a shield with the external circuit (Twin-T notch filter, 7
 
 | Pin | User Label | Function | Signal Type | Connector | Pin # | Initial State | Purpose |
 |-----|------------|----------|-------------|-----------|-------|---------------|---------|
-| PC8 | GAIN_SLCT_1 | GPIO Output | Digital Output | CN10 | 2 | LOW | OPA2690 gain select bit 0 |
-| PC9 | GAIN_SLCT_2 | GPIO Output | Digital Output | CN10 | 1 | LOW | OPA2690 gain select bit 1 |
+| PC3 | GAIN_SLCT_1 | GPIO Output | Digital Output | CN10 | 2 | LOW | OPA2690 gain select bit 0 |
+| PC1 | GAIN_SLCT_2 | GPIO Output | Digital Output | CN10 | 1 | LOW | OPA2690 gain select bit 1 |
 | PC4 | OP_DIS | GPIO Output | Digital Output | CN7 | 34 | LOW | OPA2690 power-down control (HIGH = disabled) |
 
 **Gain Selection Table:**
@@ -123,10 +122,10 @@ The goal is to create a shield with the external circuit (Twin-T notch filter, 7
 
 | Pin | User Label | Function | Signal Type | Connector | Pin # | Initial State | Color | Purpose |
 |-----|------------|----------|-------------|-----------|-------|---------------|-------|---------|
-| PA6 | INIT_LED / STATUS_LED | GPIO Output | Digital Output | CN10 | 13 | LOW | Green | System initialization / status indicator |
-| PA7 | MEAS_LED | GPIO Output | Digital Output | CN10 | 15 | LOW | Yellow | Measurement in progress indicator |
-| PC7 | EXCITE_LED | GPIO Output | Digital Output | CN10 | 19 | LOW | Blue | 20 MHz excitation active indicator |
-| PB1 | ERR_LED | GPIO Output | Digital Output | CN8 | 6 | LOW | Red | Error state indicator |
+| PB8 | INIT_LED / STATUS_LED | GPIO Output | Digital Output | CN10 | 13 | LOW | Green | System initialization / status indicator |
+| PC9 | MEAS_LED | GPIO Output | Digital Output | CN10 | 15 | LOW | Yellow | Measurement in progress indicator |
+| PC8 | EXCITE_LED | GPIO Output | Digital Output | CN10 | 19 | LOW | Blue | 20 MHz excitation active indicator |
+| PC6 | ERR_LED | GPIO Output | Digital Output | CN8 | 6 | LOW | Red | Error state indicator |
 
 ---
 
@@ -220,7 +219,7 @@ The system uses **two UART interfaces**:
 
 | Interface | Instance | TX Pin | RX Pin | Baud Rate | Flow Control | Purpose |
 |-----------|----------|--------|--------|-----------|--------------|---------|
-| NINA BT | UART4 | PC10 | PA1 | 115200 | RTS/CTS (HW) | Bluetooth module → Mobile app |
+| NINA BT | UART4 | PC10 | PC11 | 115200 | RTS/CTS (HW) | Bluetooth module → Mobile app |
 | USB Debug | USART2 | PA2 | PA3 | 115200 | None | ST-Link VCP → PC tools |
 
 ---
@@ -231,13 +230,6 @@ The system uses **two UART interfaces**:
 
 | Pin | Label | Function | Direction |
 |-----|-------|----------|-----------|
-| PA1 | NINA_RX | UART4_RX | Input |
-| PA2 | USART2_TX | USART2_TX | Output |
-| PA3 | USART2_RX | USART2_RX | Input |
-| PA4 | FRQ_TN | DAC1_OUT1 | Analog Out |
-| PA5 | Q_FACT_TN | DAC1_OUT2 | Analog Out |
-| PA6 | INIT_LED | GPIO Output | Output |
-| PA7 | MEAS_LED | GPIO Output | Output |
 | PA8 | MCO | MCO | Output |
 | PA9 | SQR_20M_OUT | TIM1_CH2 | Output |
 | PA11 | NINA_RST | GPIO Output | Output |
@@ -250,40 +242,40 @@ The system uses **two UART interfaces**:
 
 | Pin | Label | Function | Direction |
 |-----|-------|----------|-----------|
-| PB1 | ERR_LED | GPIO Output | Output |
 | PB3 | SWO | SWO | Output |
 | PB7 | NINA_CTS | UART4_CTS | Input |
+| PB8 | INIT_LED | GPIO Output | Output |
+| PB11 | NINA_DTR | GPIO Output | Output |
+| PB12 | NINA_DSR | GPIO Input | Input |
 
 ### Port C
 
 | Pin | Label | Function | Direction |
 |-----|-------|----------|-----------|
 | PC0 | NOTCH_AMP_IN | ADC1_IN1 | Analog In |
-| PC1 | NINA_LED_RED | GPIO Input | Input |
-| PC2 | NINA_LED_BLUE | GPIO Input | Input |
-| PC3 | NINA_LED_GREEN | GPIO Input | Input |
+| PC1 | GAIN_SLCT_2 | GPIO Output | Output |
+| PC2 | NINA_LED_GREEN | GPIO Input | Input |
+| PC3 | GAIN_SLCT_1 | GPIO Output | Output |
 | PC4 | OP_DIS | GPIO Output | Output |
-| PC7 | EXCITE_LED | GPIO Output | Output |
-| PC8 | GAIN_SLCT_1 | GPIO Output | Output |
-| PC9 | GAIN_SLCT_2 | GPIO Output | Output |
+| PC6 | ERR_LED | GPIO Output | Output |
+| PC8 | EXCITE_LED | GPIO Output | Output |
+| PC9 | MEAS_LED | GPIO Output | Output |
 | PC10 | NINA_TX | UART4_TX | Output |
-| PC11 | NINA_RTS | GPIO Input | Input |
-| PC12 | NINA_DTR | GPIO Output | Output |
+| PC11 | NINA_RX | UART4_RX | Input |
 | PC13 | B1 | EXTI13 | Input |
+| PC14 | NINA_LED_BLUE | GPIO Input | Input |
+| PC15 | NINA_LED_RED | GPIO Input | Input |
 
 ### Port D
 
 | Pin | Label | Function | Direction |
 |-----|-------|----------|-----------|
-| PD2 | NINA_DSR | GPIO Input | Input |
 
 ---
 
 ## Pinout View
 
-![Current Pinout View](image-8.png)
-
-![alt text](image-7.png)
+![alt text](image-8.png)
 
 ![alt text](image-6.png)
 
@@ -297,11 +289,14 @@ The system uses **two UART interfaces**:
 
 ![alt text](image-5.png)
 
+![alt text](image-10.png)
+
 ---
 
 ## Revision History
 
 | Date | Version | Author | Changes |
 |------|---------|--------|---------|
-| 2025-12-16 | 2.0 | - | Major update: Added complete NINA pinout (TX, RX, CTS, RTS, RST, STOP, DTR, RTS, DSR, LED status), added NINA_DSR placeholder, GPIO summary by port, updated specifications to match firmware |
-| - | 1.0 | - | Initial pinout documentation |
+| 2025-12-18 | 2.1 | Al Rashid | Major update: new NINA pinout added and updated GPIO summary by port |
+| 2025-12-16 | 2.0 | Al Rashid | Major update: Added complete NINA pinout (TX, RX, CTS, RTS, RST, STOP, DTR, RTS, DSR, LED status), added NINA_DSR placeholder, GPIO summary by port, updated specifications to match firmware |
+| - | 1.0 | Al Rashid | Initial pinout documentation |

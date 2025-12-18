@@ -7,7 +7,7 @@
   ******************************************************************************
   * @attention
   *
-  * This file provides PWM functionality for TIM1 CH2 (PA9 - SQR_20M_OUT).
+  * This file provides PWM functionality for TIM3 CH3 (PB0 - SQR_20M_OUT).
   * The timer is configured to generate a square wave at the desired frequency
   * and duty cycle.
   *
@@ -19,7 +19,7 @@
 #include "main.h"
 
 /* Private defines -----------------------------------------------------------*/
-#define PWM_CHANNEL         TIM_CHANNEL_2
+#define PWM_CHANNEL         TIM_CHANNEL_3
 #define PWM_TIMER_CLOCK     80000000UL  // TIM1 clock frequency (80 MHz from SYSCLK)
 
 /* Private variables ---------------------------------------------------------*/

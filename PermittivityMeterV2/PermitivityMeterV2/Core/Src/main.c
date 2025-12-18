@@ -63,6 +63,7 @@ DMA_HandleTypeDef hdma_dac_ch1;
 IWDG_HandleTypeDef hiwdg;
 
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart4;
@@ -88,6 +89,7 @@ static void MX_IWDG_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -95,11 +97,12 @@ static void MX_TIM6_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+/*
 static void uart2_panic_print(const char *msg)
 {
   /* Best-effort: bring up USART2 using the current clock domain (even if
-   * SystemClock_Config() failed and we are still on the reset-default MSI).
-   */
+   /* SystemClock_Config() failed and we are still on the reset-default MSI).
+
   (void)MX_USART2_UART_Init();
   const char *prefix = "STAT:ERR:";
   (void)HAL_UART_Transmit(&huart2, (uint8_t *)prefix, (uint16_t)strlen(prefix), 1000U);
@@ -109,7 +112,7 @@ static void uart2_panic_print(const char *msg)
   const char *suffix = "\n";
   (void)HAL_UART_Transmit(&huart2, (uint8_t *)suffix, (uint16_t)strlen(suffix), 1000U);
 }
-
+*/
 /* USER CODE END 0 */
 
 /**
@@ -149,6 +152,7 @@ int main(void)
   MX_TIM1_Init();
   MX_USART2_UART_Init();
   MX_TIM6_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
   /* ========================================================================== */
@@ -173,8 +177,8 @@ int main(void)
     Error_Handler();
   }
 
-  /* Initialize PWM Driver (20 MHz excitation signal) */
-  HAL_PWM_Init(&htim1);
+  /* Initialize PWM Driver (20 MHz excitation signal on PB0) */
+  HAL_PWM_Init(&htim3);
   HAL_PWM_SetFrequency(20000000UL);
   HAL_PWM_SetDutyCycle(50);
   /* Note: PWM is NOT started here - FSM controls when to start excitation */
@@ -187,176 +191,65 @@ int main(void)
     (void)HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_HIGH);
   }
 
-  /* ========================================================================== */
-  /*                            TEST FUNCTIONS                                  */
-  /*                    Uncomment ONE test at a time to verify                  */
-  /* ========================================================================== */
-
-  /* -------------------------------------------------------------------------- */
-  /* TEST 1: GPIO LED Blink Test                                                */
-  /* Verifies: HL_GPIO_Write, HL_GPIO_Toggle, all 4 LEDs                        */
-  /* Expected: Each LED blinks 3 times in sequence                              */
-  /* -------------------------------------------------------------------------- */
+ 
   
-  /*
-  for (int led = 0; led < 4; led++)
-  {
-    for (int i = 0; i < 3; i++)
-    {
-      HL_GPIO_Write((HL_GPIO_Pin_t)led, HL_GPIO_HIGH);
-      HAL_Delay(200);
-      HL_GPIO_Write((HL_GPIO_Pin_t)led, HL_GPIO_LOW);
-      HAL_Delay(200);
-    }
-  }
-  */
-
   /* -------------------------------------------------------------------------- */
-  /* TEST 2: GPIO Button Read Test                                              */
-  /* Verifies: HL_GPIO_Read for button, active-low logic                        */
-  /* Expected: Press button -> Error LED ON, Release -> Error LED OFF           */
-  /* -------------------------------------------------------------------------- */
-  /*
-
-  while (1)
-  {
-    HAL_IWDG_Refresh(&hiwdg);
-    HL_GPIO_State_t btn_state;
-    HL_GPIO_Read(HL_GPIO_BTN_USER, &btn_state);
-    
-    if (btn_state == HL_GPIO_LOW)  // Button pressed (active-low)
-    {
-      HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_HIGH);
-      HL_GPIO_Toggle(HL_GPIO_LED_INIT);
-    }
-    else
-    {
-      HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_LOW);
-    }
-    HAL_Delay(10);
-  }
-  */
-
-  /* -------------------------------------------------------------------------- */
-  /* TEST 3: DAC Voltage Output Test                                            */
-  /* Verifies: HL_DAC_SetVoltage on both channels                               */
-  /* Expected: PA4 = 1.65V, PA5 = 2.5V (measure with multimeter)                */
-  /* -------------------------------------------------------------------------- */
-  /*
-  HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, 1.65f);  // PA4 = 1.65V (mid-range)
-  HL_DAC_SetVoltage(DAC_CH_Q_FACTOR, 2.5f);    // PA5 = 2.5V
-  while (1) { HAL_IWDG_Refresh(&hiwdg); HAL_Delay(100); }
-  */
-
-
-  /* -------------------------------------------------------------------------- */
-  /* TEST 4: DAC Triangle Wave Test                                             */
-  /* Verifies: DAC dynamic output, timing                                       */
-  /* Expected: Triangle wave on PA4 (0V to 3.3V), viewable on oscilloscope      */
-  /* -------------------------------------------------------------------------- */
-  /*
-  float voltage = 0.0f;
-  float step = 0.1f;
-  int direction = 1;
-  while (1)
-  {
-    HAL_IWDG_Refresh(&hiwdg);
-    HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, voltage);
-    voltage += step * direction;
-    if (voltage >= 3.3f) { voltage = 3.3f; direction = -1; }
-    if (voltage <= 0.0f) { voltage = 0.0f; direction = 1; }
-    HAL_Delay(5);
-  }
-  */
-
-  /* -------------------------------------------------------------------------- */
-  /* TEST 5: PWM Output Test                                                    */
-  /* Verifies: HAL_PWM_Start, 20 MHz output on PA9                              */
-  /* Expected: 20 MHz square wave on PA9 (measure with oscilloscope/freq counter)*/
-  /* -------------------------------------------------------------------------- */
-  /*
-  HAL_PWM_Start();
-  HL_GPIO_Write(HL_GPIO_LED_EXCITE, HL_GPIO_HIGH);  // Indicate PWM active
-  while (1) { HAL_IWDG_Refresh(&hiwdg); HAL_Delay(100); }
-  */
-
-  /* -------------------------------------------------------------------------- */
-  /* TEST 6: ADC Continuous Read Test                                           */
-  /* Verifies: ADC DMA buffer capture, HL_ADC_IsBufferReady                     */
-  /* Expected: Meas LED toggles when ADC buffer fills                           */
-  /* -------------------------------------------------------------------------- */
-  /*
-  HL_DAC_SetVoltage(DAC_CH_FREQ_TUNE, 3.2);
-  while (1)
-  {
-    HAL_IWDG_Refresh(&hiwdg);
-    if (HL_ADC_IsBufferReady())  // First check if a buffer is ready
-    {
-      uint16_t *buffer = HL_ADC_GetBuffer();  // Get the buffer (clears ready flag)
-      if (buffer != NULL && !HL_ADC_IsBufferEmpty(buffer))
-      {
-        HL_GPIO_Write(HL_GPIO_LED_MEAS, HL_GPIO_HIGH);  // LED ON = buffer has data
-      }
-      else
-      {
-        HL_GPIO_Write(HL_GPIO_LED_MEAS, HL_GPIO_LOW);   // LED OFF = buffer empty
-      }
-    }
-  }
-  */
-
-  /* -------------------------------------------------------------------------- */
-  /* TEST 7: ADC to DAC Passthrough Test                                        */
-  /* Verifies: Full ADC -> DAC chain (connect PA4 output to PC0 input)          */
-  /* Expected: PA5 mirrors average of ADC input                                 */
+  /* TEST 9: Verification of New Pin Changes (COMMENTED OUT FOR PRODUCTION)     */
+  /* Verifies:                                                                  */
+  /*   - Gain Select 1 (PC3)                                                    */
+  /*   - Gain Select 2 (PC1)                                                    */
+  /*   - LEDs: INIT(PB8), MEAS(PC9), EXCITE(PC8), ERR(PC6)                      */
+  /*   - NINA DTR (PB11)                                                        */
+  /* Expected:                                                                  */
+  /*   - Gain Selects & DTR toggle every 1s (approx)                            */
+  /*   - LEDs chase sequence (250ms each)                                       */
   /* -------------------------------------------------------------------------- */
   /*
   while (1)
   {
     HAL_IWDG_Refresh(&hiwdg);
-    if (HL_ADC_IsBufferReady())
-    {
-      uint16_t* data = HL_ADC_GetBuffer();
-      if (data != NULL)
-      {
-        uint32_t sum = 0;
-        for (int i = 0; i < ADC_BUFFER_SIZE; i++) { sum += data[i]; }
-        uint16_t avg = sum / ADC_BUFFER_SIZE;
-        HL_DAC_SetRawValue(DAC_CH_Q_FACTOR, avg);
-        HL_GPIO_Toggle(HL_GPIO_LED_MEAS);
-      }
-    }
-    HAL_Delay(1);
-  }
-  */
 
-  /* -------------------------------------------------------------------------- */
-  /* TEST 8: HAL GPIO UI Test                                                   */
-  /* Verifies: HL_GPIO_Read, HL_GPIO_Write for button->LED                      */
-  /* Expected: Press button -> Error LED ON, Release -> Error LED OFF           */
-  /* -------------------------------------------------------------------------- */
-  /*
-  while (1)
-  {
-    HAL_IWDG_Refresh(&hiwdg);
-    HL_GPIO_State_t btn_state;
-    HL_GPIO_Read(HL_GPIO_BTN_USER, &btn_state);
-    uint8_t pressed = (btn_state == HL_GPIO_LOW) ? 1U : 0U;
-    HL_GPIO_Write(HL_GPIO_LED_ERR, pressed ? HL_GPIO_HIGH : HL_GPIO_LOW);
-    HAL_Delay(10);
+    // tests for the new pins
+    HL_GPIO_Toggle(HL_GPIO_NINA_DTR); // PB11
+    HL_GPIO_Toggle(HL_GPIO_NINA_STOP); // PA12
+    HL_GPIO_Toggle(HL_GPIO_NINA_RST); // PA11
+    // Toggle 1-second interval pins (4 steps x 250ms = 1s)
+    HL_GPIO_Toggle(HL_GPIO_RF_GAIN_0);      // PC3
+    HL_GPIO_Toggle(HL_GPIO_RF_GAIN_1);      // PC1
+    HAL_GPIO_TogglePin(NINA_DTR_GPIO_Port, NINA_DTR_Pin); // PB11
+
+    // LED Chase Sequence
+    HL_GPIO_Write(HL_GPIO_LED_INIT, HL_GPIO_HIGH);   // PB8 ON
+    HL_GPIO_Write(HL_GPIO_LED_MEAS, HL_GPIO_LOW);
+    HL_GPIO_Write(HL_GPIO_LED_EXCITE, HL_GPIO_LOW);
+    HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_LOW);
+    HAL_Delay(250);
+
+    HL_GPIO_Write(HL_GPIO_LED_INIT, HL_GPIO_LOW);
+    HL_GPIO_Write(HL_GPIO_LED_MEAS, HL_GPIO_HIGH);   // PC9 ON
+    HAL_Delay(250);
+
+    HL_GPIO_Write(HL_GPIO_LED_MEAS, HL_GPIO_LOW);
+    HL_GPIO_Write(HL_GPIO_LED_EXCITE, HL_GPIO_HIGH); // PC8 ON
+    HAL_Delay(250);
+
+    HL_GPIO_Write(HL_GPIO_LED_EXCITE, HL_GPIO_LOW);
+    HL_GPIO_Write(HL_GPIO_LED_ERR, HL_GPIO_HIGH);    // PC6 ON
+    HAL_Delay(250);
   }
   */
+  
 
   /* ========================================================================== */
   /*                         FSM INITIALIZATION                                 */
   /* ========================================================================== */
 
   FSM_Init();
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  HAL_PWM_Start();
   while (1)
   {
     HAL_IWDG_Refresh(&hiwdg);
@@ -602,8 +495,6 @@ static void MX_TIM1_Init(void)
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
 
   /* USER CODE BEGIN TIM1_Init 1 */
 
@@ -624,10 +515,6 @@ static void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
@@ -635,37 +522,69 @@ static void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_ENABLE;
-  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
-  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
-  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
-  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
-  sBreakDeadTimeConfig.DeadTime = 0;
-  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
-  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
-  sBreakDeadTimeConfig.BreakFilter = 0;
-  sBreakDeadTimeConfig.Break2State = TIM_BREAK2_DISABLE;
-  sBreakDeadTimeConfig.Break2Polarity = TIM_BREAK2POLARITY_HIGH;
-  sBreakDeadTimeConfig.Break2Filter = 0;
-  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
-  if (HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN TIM1_Init 2 */
   	// pwm_is_running = 0;
      //pwm_duty_cycle = PWM_DUTY_CYCLE_DEFAULT;
   /* USER CODE END TIM1_Init 2 */
-  HAL_TIM_MspPostInit(&htim1);
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 0;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 65535;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 2;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_ENABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
 
 }
 
@@ -824,14 +743,14 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, INIT_LED_Pin|MEAS_LED_Pin|NINA_RST_Pin|NINA_STOP_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GAIN_SLCT_2_Pin|GAIN_SLCT_1_Pin|OP_DIS_Pin|ERR_LED_Pin
+                          |EXCITE_LED_Pin|MEAS_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, OP_DIS_Pin|EXCITE_LED_Pin|GAIN_SLCT_1_Pin|GAIN_SLCT_2_Pin
-                          |NINA_DTR_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, NINA_DTR_Pin|INIT_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(ERR_LED_GPIO_Port, ERR_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, NINA_RST_Pin|NINA_STOP_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -839,34 +758,38 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : NINA_LED_RED_Pin NINA_LED_BLUE_Pin NINA_LED_GREEN_Pin NINA_RTS_Pin */
-  GPIO_InitStruct.Pin = NINA_LED_RED_Pin|NINA_LED_BLUE_Pin|NINA_LED_GREEN_Pin|NINA_RTS_Pin;
+  /*Configure GPIO pins : NINA_LED_BLUE_Pin NINA_LED_RED_Pin NINA_LED_GREEN_Pin */
+  GPIO_InitStruct.Pin = NINA_LED_BLUE_Pin|NINA_LED_RED_Pin|NINA_LED_GREEN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : INIT_LED_Pin MEAS_LED_Pin NINA_RST_Pin NINA_STOP_Pin */
-  GPIO_InitStruct.Pin = INIT_LED_Pin|MEAS_LED_Pin|NINA_RST_Pin|NINA_STOP_Pin;
+  /*Configure GPIO pins : GAIN_SLCT_2_Pin GAIN_SLCT_1_Pin */
+  GPIO_InitStruct.Pin = GAIN_SLCT_2_Pin|GAIN_SLCT_1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : OP_DIS_Pin EXCITE_LED_Pin GAIN_SLCT_1_Pin GAIN_SLCT_2_Pin
-                           NINA_DTR_Pin */
-  GPIO_InitStruct.Pin = OP_DIS_Pin|EXCITE_LED_Pin|GAIN_SLCT_1_Pin|GAIN_SLCT_2_Pin
-                          |NINA_DTR_Pin;
+  /*Configure GPIO pins : OP_DIS_Pin ERR_LED_Pin EXCITE_LED_Pin MEAS_LED_Pin */
+  GPIO_InitStruct.Pin = OP_DIS_Pin|ERR_LED_Pin|EXCITE_LED_Pin|MEAS_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : ERR_LED_Pin */
-  GPIO_InitStruct.Pin = ERR_LED_Pin;
+  /*Configure GPIO pins : NINA_DTR_Pin INIT_LED_Pin */
+  GPIO_InitStruct.Pin = NINA_DTR_Pin|INIT_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(ERR_LED_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : NINA_DSR_Pin */
+  GPIO_InitStruct.Pin = NINA_DSR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(NINA_DSR_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA8 */
   GPIO_InitStruct.Pin = GPIO_PIN_8;
@@ -874,6 +797,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.Alternate = GPIO_AF0_MCO;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : NINA_RST_Pin NINA_STOP_Pin */
+  GPIO_InitStruct.Pin = NINA_RST_Pin|NINA_STOP_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */

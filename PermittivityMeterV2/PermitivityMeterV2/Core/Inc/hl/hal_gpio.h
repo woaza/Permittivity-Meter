@@ -133,6 +133,7 @@ typedef enum
     /* NINA Module Control */
     HL_GPIO_NINA_RST   = 7,  /**< NINA Reset - PA11 */
     HL_GPIO_NINA_STOP  = 8,  /**< NINA Stop - PA12 */
+    HL_GPIO_NINA_DTR   = 9,  /**< NINA DTR - PB11 */
 
     HL_GPIO_PIN_COUNT        /**< Total number of defined pins */
 } HL_GPIO_Pin_t;
