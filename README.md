@@ -94,7 +94,7 @@ After that, `CMD:CONN` should respond with exactly one `STAT:RDY`.
 
 | Pin | Name | Function | Description |
 | :--- | :--- | :--- | :--- |
-| **PB0** | `SQR_20M_OUT` | **PWM Output** | 20 MHz Excitation Signal (TIM3_CH3). |
+| **PA0** | `SQR_20M_OUT` | **PWM Output** | 20 MHz Excitation Signal (TIM2_CH1). |
 | **PA4** | `FRQ_TN` | **DAC1 Ch1** | Frequency Tuning Varicap Voltage. |
 | **PA5** | `Q_FACT_TN` | **DAC1 Ch2** | Q-Factor Tuning Varicap Voltage. |
 | **PC0** | `NOTCH_AMP_IN` | **ADC1 IN1** | Notch Filter Output Amplitude. |
