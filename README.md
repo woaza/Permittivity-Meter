@@ -121,13 +121,13 @@ After that, `CMD:CONN` should respond with exactly one `STAT:RDY`.
 | **PA3** | `VCP_RX` | **USART2 RX** | USB Virtual COM Port RX. |
 | **PC8** | `GAIN_SLCT_1` | **GPIO Out** | RF Gain Select Bit 0. |
 | **PC9** | `GAIN_SLCT_2` | **GPIO Out** | RF Gain Select Bit 1. |
-| **PB8** | `I2C1_SCL` | **I2C SCL** | LCD Display Clock. |
-| **PB9** | `I2C1_SDA` | **I2C SDA** | LCD Display Data. |
+| **PB6** | `LCD_SCL` | **I2C SCL** | LCD Display Clock. |
+| **PB7** | `LCD_SDA` | **I2C SDA** | LCD Display Data. |
 
 ### Electronics Notes
 
-* **PWM Output**: The GPIO (PA9) outputs 3.3V, but the RF circuit requires a **1V peak**. An **OpAmp buffer** with attenuation is required between the MCU and the circuit.
-* **Varicap Control**: The DAC outputs (PA4, PA5) control the Varicaps. Channel 1 tunes the frequency (D1), and Channel 2 tunes the Q-factor.
+- **PWM Output**: The GPIO (PA9) outputs 3.3V, but the RF circuit requires a **1V peak**. An **OpAmp buffer** with attenuation is required between the MCU and the circuit.
+- **Varicap Control**: The DAC outputs (PA4, PA5) control the Varicaps. Channel 1 tunes the frequency (D1), and Channel 2 tunes the Q-factor.
 
 ---
 
@@ -212,9 +212,9 @@ The device operates autonomously using the onboard Button, LEDs, and LCD.
 
 ### Button Logic (PC13)
 
-* **1st Press**: Triggers **Calibration** (if no valid calibration exists).
-* **2nd Press**: Triggers **Measurement** (if calibration is valid).
-* **Press in Error State**: Resets the system to Init.
+- **1st Press**: Triggers **Calibration** (if no valid calibration exists).
+- **2nd Press**: Triggers **Measurement** (if calibration is valid).
+- **Press in Error State**: Resets the system to Init.
 
 ### LED & LCD Status
 
@@ -234,18 +234,18 @@ Note: there is no separate FSM state called "RESULT" in the current V2 flow. The
 
 ### A. Transition from Mock to Real Hardware (Priority: High)
 
-* **Context**: `bsp_rf.c` is currently a mock that logs to UART but doesn't touch pins.
-* **Tasks**:
+- **Context**: `bsp_rf.c` is currently a mock that logs to UART but doesn't touch pins.
+- **Tasks**:
     1. [ ] **Enable Drivers**: In `bsp_rf.c`, replace `Debug_LogDriver` with:
-        * `HL_DAC_SetVoltage(DAC_CH_FREQ, v)`
-        * `HL_DAC_SetVoltage(DAC_CH_Q, v)`
+        - `HL_DAC_SetVoltage(DAC_CH_FREQ, v)`
+        - `HL_DAC_SetVoltage(DAC_CH_Q, v)`
     2. [ ] **Clean Main Loop**: Remove the manual waveform generation code in `main.c`'s `while(1)` loop. It conflicts with the FSM.
     3. [ ] **Verify Timing**: Add `HAL_Delay(1)` in `rf_measure.c`'s `sample_at()` to allow Varicap voltage to settle.
 
 ### B. Signal Processing Implementation
 
-* **Context**: We need to measure 20MHz using a slower ADC via undersampling.
-* **Tasks**:
+- **Context**: We need to measure 20MHz using a slower ADC via undersampling.
+- **Tasks**:
     1. [ ] **ADC Timer**: Configure `main.c` / `hal_adc.c` (TIM6) to a specific frequency $f_s$ (e.g., ~800.1 kHz) to alias 20MHz to ~2.5kHz.
     2. [ ] **Buffer Capture**: Implement `BSP_RF_CaptureBuffer(float* buffer, size_t len)` in `bsp_rf.c` using DMA.
     3. [ ] **DFT Logic**: Implement a simple DFT/Goertzel in `math_model.c` to calculate magnitude at the alias frequency.
@@ -253,22 +253,22 @@ Note: there is no separate FSM state called "RESULT" in the current V2 flow. The
 
 ### C. User Interface Enhancements
 
-* **Context**: The LCD currently only shows status strings, not results.
-* **Tasks**:
+- **Context**: The LCD currently only shows status strings, not results.
+- **Tasks**:
     1. [ ] **Display Result**: Update `FSM_HandleCalculation` to format the result (e.g., `E: 1.54 D: 0.32`) and display it on the LCD.
 
 ### D. PC Control & Mirroring
 
-* **Context**: The PC CLI (`tools/pc_cli.py`) should control the device exactly like the Bluetooth app.
-* **Tasks**:
+- **Context**: The PC CLI (`tools/pc_cli.py`) should control the device exactly like the Bluetooth app.
+- **Tasks**:
     1. [ ] **Add UART4/NINA transport**: Implement UART4 RX/TX for the NINA module and route its received lines into the same `BT_ProcessIncoming()` command parser.
     2. [x] **USB Input**: USART2 RX is line-wise and feeds directly into the command parser via `usb_cdc_bridge.c` → `BT_ProcessIncoming()`.
     3. [x] **Burst Safety**: Back-to-back commands are protected by a UART RX line queue and an FSM event queue.
 
 ### E. Hardware / Electronics
 
-* [ ] **PWM Level**: Add OpAmp buffer/divider to PA9 to attenuate 3.3V PWM to 1V peak.
-* [ ] **Power**: Design for -40°C operation and battery support.
+- [ ] **PWM Level**: Add OpAmp buffer/divider to PA9 to attenuate 3.3V PWM to 1V peak.
+- [ ] **Power**: Design for -40°C operation and battery support.
 
 ---
 
@@ -490,18 +490,18 @@ When running without real hardware (or when `bsp_rf.c` is in mock mode), the sys
 
 The mock generates a **parabolic dip (minimum)** to simulate the resonance circuit absorption.
 
-* **Formula**: $Amplitude = Base + Curvature \cdot (V_{dac} - V_{res})^2 + Noise$
-* **Behavior**: The firmware's peak detection algorithm looks for a **minimum** amplitude.
-* **Default**: A minimum at **1.2V** with a base amplitude of **1.0V**.
+- **Formula**: $Amplitude = Base + Curvature \cdot (V_{dac} - V_{res})^2 + Noise$
+- **Behavior**: The firmware's peak detection algorithm looks for a **minimum** amplitude.
+- **Default**: A minimum at **1.2V** with a base amplitude of **1.0V**.
 
 ### Verification
 
-* **Correctness**: The mock correctly produces a "U" shape, and the `rf_measure.c` logic correctly searches for a minimum (`if (amp < local_best_amp)`).
-* **Limitations**: The mock does not currently simulate the Q-factor change significantly (it only adds a small linear offset based on Q-voltage).
+- **Correctness**: The mock correctly produces a "U" shape, and the `rf_measure.c` logic correctly searches for a minimum (`if (amp < local_best_amp)`).
+- **Limitations**: The mock does not currently simulate the Q-factor change significantly (it only adds a small linear offset based on Q-voltage).
 
 ### Missing CLI Features (TODO)
 
-* **RF State Readback**: There is currently no command (e.g., `CMD:RF:STAT`) to read the instantaneous state of the RF hardware (Excitation On/Off, Current DAC Voltage). This must be inferred from `CMD:TRACE` or `CMD:LEDS` (Excite LED).
-* ~~**Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing.~~ **DONE**: `CMD:HAL:*` commands now provide direct hardware control (see Section 6: HAL Board Commands) (STILL NEEDS TO BE TESTED).
+- **RF State Readback**: There is currently no command (e.g., `CMD:RF:STAT`) to read the instantaneous state of the RF hardware (Excitation On/Off, Current DAC Voltage). This must be inferred from `CMD:TRACE` or `CMD:LEDS` (Excite LED).
+- ~~**Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing.~~ **DONE**: `CMD:HAL:*` commands now provide direct hardware control (see Section 6: HAL Board Commands) (STILL NEEDS TO BE TESTED).
 
 For the current actionable task list, see [ToDos.md](ToDos.md).

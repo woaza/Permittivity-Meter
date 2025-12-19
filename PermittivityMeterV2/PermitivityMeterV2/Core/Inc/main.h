@@ -60,6 +60,7 @@ extern DAC_HandleTypeDef hdac1;
 extern UART_HandleTypeDef huart2;
 extern TIM_HandleTypeDef htim1;
 extern UART_HandleTypeDef huart4;
+extern I2C_HandleTypeDef hi2c1;
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
@@ -77,6 +78,8 @@ extern UART_HandleTypeDef huart4;
 #define NINA_LED_GREEN_GPIO_Port GPIOC
 #define GAIN_SLCT_1_Pin GPIO_PIN_3
 #define GAIN_SLCT_1_GPIO_Port GPIOC
+#define SQR_20M_OUT_Pin GPIO_PIN_0
+#define SQR_20M_OUT_GPIO_Port GPIOA
 #define USB_TX_Pin GPIO_PIN_2
 #define USB_TX_GPIO_Port GPIOA
 #define USB_RX_Pin GPIO_PIN_3
@@ -87,8 +90,6 @@ extern UART_HandleTypeDef huart4;
 #define Q_FACT_TN_GPIO_Port GPIOA
 #define OP_DIS_Pin GPIO_PIN_4
 #define OP_DIS_GPIO_Port GPIOC
-#define SQR_20M_OUT_Pin GPIO_PIN_0
-#define SQR_20M_OUT_GPIO_Port GPIOB
 #define NINA_DTR_Pin GPIO_PIN_11
 #define NINA_DTR_GPIO_Port GPIOB
 #define NINA_DSR_Pin GPIO_PIN_12
@@ -115,10 +116,14 @@ extern UART_HandleTypeDef huart4;
 #define NINA_RX_GPIO_Port GPIOC
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
+#define LCD_SCL_Pin GPIO_PIN_6
+#define LCD_SCL_GPIO_Port GPIOB
 #define NINA_CTS_Pin GPIO_PIN_7
 #define NINA_CTS_GPIO_Port GPIOB
 #define INIT_LED_Pin GPIO_PIN_8
 #define INIT_LED_GPIO_Port GPIOB
+#define LCD_SDA_Pin GPIO_PIN_9
+#define LCD_SDA_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

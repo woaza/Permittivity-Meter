@@ -5,7 +5,7 @@
 // develop against mocks. Ports use STM32-style lettering and pins are the numeric value.
 
 #define PIN_NOCH_20M_IN_PORT        'A'
-#define PIN_NOCH_20M_IN_PIN         9
+#define PIN_NOCH_20M_IN_PIN         0
 
 #define PIN_FRQ_TN_PORT             'A'
 #define PIN_FRQ_TN_PIN              4
@@ -84,3 +84,9 @@
 #define DAC_Q_CHANNEL               2
 
 #define UART_BT_INSTANCE            4
+
+#define PIN_LCD_SCL_PORT            'B'
+#define PIN_LCD_SCL_PIN             6
+
+#define PIN_LCD_SDA_PORT            'B'
+#define PIN_LCD_SDA_PIN             9
