@@ -71,6 +71,19 @@ ADC_StatusTypeDef HL_ADC_Init(ADC_HandleTypeDef *hadc, TIM_HandleTypeDef *htim)
         return ADC_ERROR;
     }
 
+    // --- CRITICAL: Override CubeMX default ADC configuration ---
+    // CubeMX sets ContinuousConvMode = ENABLE and ExternalTrigConv = SOFTWARE by default.
+    // We need ContinuousConvMode = DISABLE and ExternalTrigConv = TIM6_TRGO to strictly follow timing.
+    
+    hadc_local->Init.ContinuousConvMode = DISABLE;
+    hadc_local->Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO;
+    hadc_local->Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+
+    if (HAL_ADC_Init(hadc_local) != HAL_OK)
+    {
+        return ADC_ERROR;
+    }
+
     return ADC_OK;
 }
 

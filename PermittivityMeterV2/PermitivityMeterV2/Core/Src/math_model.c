@@ -59,3 +59,50 @@ void Math_CalculateEpsilon(float v_air, float v_snow, float *epsilon_r, float *e
         *epsilon_i = 0.01f + (v_air - v_snow) * 0.02f;
     }
 }
+
+#include <math.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846f
+#endif
+
+float Math_Goertzel_Magnitude(const uint16_t *samples, size_t num_samples, float target_freq, float sampling_rate)
+{
+    if (samples == NULL || num_samples == 0) {
+        return 0.0f;
+    }
+
+    /* 1. Calculate k (bin index) and angular frequency omega */
+    /* k = (N * f_target) / f_sample */
+    float k = (float)num_samples * target_freq / sampling_rate;
+    
+    /* omega = (2 * pi * k) / N = 2 * pi * f_target / f_sample */
+    float omega = (2.0f * (float)M_PI * k) / (float)num_samples;
+    
+    float sine = sinf(omega);
+    float cosine = cosf(omega);
+    float coeff = 2.0f * cosine;
+
+    /* 2. Run the Goertzel loop */
+    float q0 = 0.0f;
+    float q1 = 0.0f;
+    float q2 = 0.0f;
+
+    for (size_t i = 0; i < num_samples; i++) {
+        float sample_val = (float)samples[i];
+        
+        q0 = coeff * q1 - q2 + sample_val;
+        q2 = q1;
+        q1 = q0;
+    }
+
+    /* 3. Calculate Squared Magnitude */
+    /* mag^2 = q1^2 + q2^2 - q1 * q2 * coeff */
+    float magnitude_squared = (q1 * q1) + (q2 * q2) - (q1 * q2 * coeff);
+    
+    if (magnitude_squared < 0.0f) {
+        magnitude_squared = 0.0f;
+    }
+
+    return sqrtf(magnitude_squared);
+}

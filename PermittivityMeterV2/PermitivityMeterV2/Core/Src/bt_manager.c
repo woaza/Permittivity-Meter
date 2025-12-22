@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <float.h>
 #include <math.h>
 
 #include "bsp_rf.h"
@@ -854,6 +855,62 @@ static bool handle_hal_command(const char *buffer)
     return true;
 }
 
+static void handle_test_adc_command(void)
+{
+    /* CMD:TEST:ADC */
+    /* Performs 100 samples with Excitation ON and calculates statistics */
+    
+    BT_SendStatus("TEST_ADC_START");
+    
+    /* Setup */
+    BSP_RF_EnableExcitation(1U);
+    BSP_RF_SetOpAmpEnable(1U); // Enable buffer
+    BSP_RF_SetGain(1U); 
+    BSP_RF_SetFreqVaricap(1.2f); // Mid-range
+    BSP_RF_SetQVaricap(1.0f);
+    
+    /* Discard first few samples (settling) */
+    HAL_Delay(50); 
+    BSP_RF_ReadAmplitude();
+    BSP_RF_ReadAmplitude();
+
+    float sum = 0.0f;
+    float sum_sq = 0.0f;
+    float min_val = FLT_MAX;
+    float max_val = -FLT_MAX;
+    const int N = 100;
+    int valid_count = 0;
+
+    for (int i = 0; i < N; i++) {
+        float val = BSP_RF_ReadAmplitude();
+        if (isfinite(val)) {
+            sum += val;
+            sum_sq += (val * val);
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
+            valid_count++;
+        }
+        /* Small delay to allow buffer refresh if polling fast */
+        HAL_Delay(2); 
+    }
+    
+    BSP_RF_EnableExcitation(0U); // Cleanup
+
+    if (valid_count > 0) {
+        float mean = sum / valid_count;
+        float variance = (sum_sq / valid_count) - (mean * mean);
+        float std_dev = sqrtf(variance > 0 ? variance : 0.0f);
+        
+        char buf[128];
+        snprintf(buf, sizeof(buf), "TEST:ADC:N:%d:MEAN:%.4f:STD:%.4f:MIN:%.4f:MAX:%.4f", 
+                 valid_count, mean, std_dev, min_val, max_val);
+        output_line(buf);
+        BT_SendStatus("TEST_ADC_OK");
+    } else {
+        BT_SendStatus("TEST_ADC_FAIL_NO_DATA");
+    }
+}
+
 void BT_Manager_Init(void)
 {
     MockBoard_Init();
@@ -957,6 +1014,8 @@ void BT_ProcessIncoming(const char *buffer)
         push_event(BT_EVENT_MANUAL_OFF);
         Debug_LogDriver("BT_RX", "CMD:MANUAL:OFF");
         BT_SendStatus("MANUAL_OFF_REQ");
+    } else if (strncmp(buffer, "CMD:TEST:ADC", 12) == 0) {
+        handle_test_adc_command();
     } else {
         Debug_LogDriver("BT_RX", "IGN");
         return;

@@ -7,8 +7,8 @@
   ******************************************************************************
   * @attention
   *
-  * This file provides an abstraction layer for PWM generation on TIM3 CH3.
-  * The PWM output is connected to PB0 (SQR_20M_OUT).
+  * This file provides an abstraction layer for PWM generation on TIM2 CH1.
+  * The PWM output is connected to PA0 (SQR_20M_OUT).
   *
   ******************************************************************************
   */
