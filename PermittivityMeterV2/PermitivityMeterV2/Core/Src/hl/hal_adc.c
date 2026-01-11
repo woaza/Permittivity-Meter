@@ -191,6 +191,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     if (hadc == hadc_local)
     {
         // Second half of buffer is ready (indices 512 to 1023)
+        //Sampling-time test
+        //HAL_GPIO_TogglePin(MEAS_LED_GPIO_Port, MEAS_LED_Pin);
+
         ready_buffer_ptr = &dma_buffer[ADC_BUFFER_SIZE];
         buffer_ready_flag = true;
     }
