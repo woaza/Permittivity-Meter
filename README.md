@@ -216,7 +216,7 @@ flowchart TB
     Manual --> HAL
 ```
 
-The diagram keeps the presentation view focused: commands enter through the Bluetooth/USB parser, the FSM routes either into the automatic measurement flow (mocked or hardware-backed via the BSP) or into manual mode that talks directly to HAL drivers.
+The diagram keeps the presentation view focused: commands enter through the Bluetooth/USB parser, the FSM routes either into the automatic measurement flow (mocked or hardware-backed via the BSP) or into manual mode that talks directly to HAL drivers. It intentionally omits lower-level links (e.g., ring buffers, trace/log plumbing) to stay slide-friendly.
 
 ### Signal Processing (Undersampling)
 
