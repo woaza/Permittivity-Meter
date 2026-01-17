@@ -121,39 +121,59 @@ The project follows a layered architecture to ensure testability and separation 
 
 ```mermaid
 flowchart LR
-        PC["PC / Test Runner\n(USART2 / ST-LINK VCP)"]
+        PC["PC / Test Runner
+(USART2 / ST-LINK VCP)"]
 
         subgraph TRANSPORT["Transport + Line Assembly"]
-            U2["usb_cdc_bridge.c\nUSART2 RX: DMA Receive-to-Idle\nRX byte ring + RX line queue"]
+            U2["usb_cdc_bridge.c
+USART2 RX: DMA Receive-to-Idle
+RX byte ring + RX line queue"]
         end
 
         subgraph PROTO["ASCII Protocol + Event Queues"]
-            BT["bt_manager.c\nBT_ProcessIncoming()\n- parses CMD:*\n- emits STAT:/DAT:\n- queues BT events"]
-            FSMQ["fsm_main.c\nFSM event queue\n(button + BT events)"]
+            BT["bt_manager.c
+BT_ProcessIncoming()
+- parses CMD:*
+- emits STAT:/DAT:
+- queues BT events"]
+            FSMQ["fsm_main.c
+FSM event queue
+(button + BT events)"]
         end
 
         subgraph APP["Application / Measurement"]
-            FSM["fsm_main.c\nAppState: INIT/IDLE/CAL/MEAS/MANUAL/ERROR"]
-            RF["rf_measure.c\ncalibration + measurement routines"]
-            TRACE["rf_trace.c\ntrace capture for CMD:TRACE"]
+            FSM["fsm_main.c
+AppState: INIT/IDLE/CAL/MEAS/MANUAL/ERROR"]
+            RF["rf_measure.c
+calibration + measurement routines"]
+            TRACE["rf_trace.c
+trace capture for CMD:TRACE"]
         end
 
         subgraph BSP["BSP Layer (Switch Point)"]
-            BSP_RF["bsp_rf.c\nRF front-end abstraction\n(Current: MOCK)"]
-            BSP_UI["bsp_ui.c\nButton + LEDs"]
-            BSP_LCD["bsp_lcd.c\nLCD buffer + I2C"]
+            BSP_RF["bsp_rf.c
+RF front-end abstraction
+(Current: MOCK)"]
+            BSP_UI["bsp_ui.c
+Button + LEDs"]
+            BSP_LCD["bsp_lcd.c
+LCD buffer + I2C"]
         end
 
         subgraph MOCK["Mock / Test Support"]
-            MOCKBOARD["mocks/mock_board.c\nRF + BT loopback"]
-            DBG["debug_log.c\nring buffer for CMD:LOG"]
+            MOCKBOARD["mocks/mock_board.c
+RF + BT loopback"]
+            DBG["debug_log.c
+ring buffer for CMD:LOG"]
         end
 
         subgraph HAL["HAL Board (Manual Mode)"]
-            HLB["hl/hal_board.c\nDirect hardware control (CMD:HAL:*)"]
+            HLB["hl/hal_board.c
+Direct hardware control (CMD:HAL:*)"]
         end
 
-        PC -->|"ASCII lines (\n terminated)"| U2
+        PC -->|"ASCII lines (
+ terminated)"| U2
         U2 -->|"Complete lines"| BT
         BT -->|"BT events"| FSMQ
         FSMQ --> FSM
@@ -179,6 +199,44 @@ flowchart LR
 | **`Core/Src/bsp_rf.c`** | **The Bridge**. The Board Support Package (BSP) for the RF frontend. | **Switch Point**. Currently **MOCK**. Needs to call HAL drivers. |
 | **`Core/Src/hl/hal_*.c`** | **The Drivers**. Wrappers around STM32 HAL. | **Real Hardware**. Directly manipulates registers. |
 | **`Core/Src/bt_manager.c`** | **The Communicator**. Handles ASCII protocol (`CMD:`, `DAT:`). | **Real Hardware**. Mirrors traffic to UART4 (BT) and USART2 (USB). |
+
+### Top-down block diagram (presentation view)
+
+```mermaid
+flowchart TB
+    subgraph SRC["Command sources"]
+        PC["PC / USB VCP (USART2)"]
+        NINA["NINA BT module (UART4)"]
+    end
+
+    subgraph INGRESS["Parser + bridge"]
+        Parser["bt_manager.c\nASCII command parser\nqueues FSM events"]
+    end
+
+    subgraph CTRL["Control"]
+        FSM["fsm_main.c\nApplication FSM"]
+    end
+
+    subgraph AUTO["Automatic path"]
+        RF["rf_measure.c\nCAL / MEAS logic"]
+        Mock["mocks/mock_board.c\nMock RF + BT loopback"]
+        BSP["bsp_rf.c\nBSP switch toward real RF"]
+    end
+
+    subgraph MANUAL["Manual / HAL path"]
+        Manual["STATE_MANUAL_OPERATION"]
+        HAL["hl/hal_board.c\nDirect hardware control"]
+    end
+
+    SRC --> INGRESS --> FSM
+    FSM --> RF
+    RF --> Mock
+    RF --> BSP
+    FSM --> Manual
+    Manual --> HAL
+```
+
+The diagram keeps the presentation view focused: commands enter through the Bluetooth/USB parser, the FSM routes either into the automatic measurement flow (mocked or hardware-backed via the BSP) or into manual mode that talks directly to HAL drivers. It intentionally omits lower-level links (e.g., ring buffers, trace/log plumbing) to stay slide-friendly.
 
 ### Signal Processing (Undersampling)
 
