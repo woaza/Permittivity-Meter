@@ -180,6 +180,44 @@ flowchart LR
 | **`Core/Src/hl/hal_*.c`** | **The Drivers**. Wrappers around STM32 HAL. | **Real Hardware**. Directly manipulates registers. |
 | **`Core/Src/bt_manager.c`** | **The Communicator**. Handles ASCII protocol (`CMD:`, `DAT:`). | **Real Hardware**. Mirrors traffic to UART4 (BT) and USART2 (USB). |
 
+### Top-down block diagram (presentation view)
+
+```mermaid
+flowchart TB
+    subgraph SRC["Command sources"]
+        PC["PC / USB VCP (USART2)"]
+        NINA["NINA BT module (UART4)"]
+    end
+
+    subgraph INGRESS["Parser + bridge"]
+        Parser["bt_manager.c\nASCII command parser\nqueues FSM events"]
+    end
+
+    subgraph CTRL["Control"]
+        FSM["fsm_main.c\nApplication FSM"]
+    end
+
+    subgraph AUTO["Automatic path"]
+        RF["rf_measure.c\nCAL / MEAS logic"]
+        Mock["mocks/mock_board.c\nMock RF + BT loopback"]
+        BSP["bsp_rf.c\nBSP switch toward real RF"]
+    end
+
+    subgraph MANUAL["Manual / HAL path"]
+        Manual["STATE_MANUAL_OPERATION"]
+        HAL["hl/hal_board.c\nDirect hardware control"]
+    end
+
+    SRC --> INGRESS --> FSM
+    FSM --> RF
+    RF --> Mock
+    RF --> BSP
+    FSM --> Manual
+    Manual --> HAL
+```
+
+The diagram keeps the presentation view focused: commands enter through the Bluetooth/USB parser, the FSM routes either into the automatic measurement flow (mocked or hardware-backed via the BSP) or into manual mode that talks directly to HAL drivers.
+
 ### Signal Processing (Undersampling)
 
 The RF signal is **20 MHz**, which exceeds the Nyquist limit of the STM32 ADC (~5 Msps). We use **Undersampling (Bandpass Sampling)**:
