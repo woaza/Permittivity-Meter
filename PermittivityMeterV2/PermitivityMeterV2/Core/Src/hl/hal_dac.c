@@ -17,6 +17,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "hl/hal_dac.h"
 #include "main.h"
+#include "hl/hal_dac_lookup.h"
 
 /* Private variables ---------------------------------------------------------*/
 static DAC_HandleTypeDef *hdac_local = NULL;
@@ -69,8 +70,16 @@ DAC_StatusTypeDef HL_DAC_SetVoltage(DAC_ChannelTypeDef channel, float voltage)
         return DAC_ERROR_INVALID_PARAM;
     }
 
-    // Calculate raw value: (Voltage / Vref) * MaxValue
-    uint32_t raw_value = (uint32_t)((voltage / DAC_VOLTAGE_REF) * DAC_MAX_VALUE);
+    // Convert voltage to lookup table index (1mV resolution)
+    // Round to nearest mV: (V * 1000) + 0.5
+    uint32_t index = (uint32_t)(voltage * 1000.0f + 0.5f);
+
+    if (index >= DAC_LUT_SIZE)
+    {
+        index = DAC_LUT_SIZE - 1;
+    }
+
+    uint32_t raw_value = DAC_LUT[index];
 
     return HL_DAC_SetRawValue(channel, raw_value);
 }

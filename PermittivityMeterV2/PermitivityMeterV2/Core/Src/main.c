@@ -189,7 +189,7 @@ int main(void)
   HAL_PWM_SetFrequency(20000000UL);
   HAL_PWM_SetDutyCycle(50);
   HAL_PWM_Start();
-  Test_HL_DAC_GenerateWaveform(&hadc1,&hiwdg);
+  Test_HL_DAC_GenerateWaveform(&hdac1,&hiwdg);
   /* Note: PWM is NOT started here - FSM controls when to start excitation */
 
   /* Turn on Init LED to indicate successful initialization */
