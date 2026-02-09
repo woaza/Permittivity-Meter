@@ -1285,17 +1285,123 @@ Additional test data in `tools/testdata/`:
 
 ### 15.1 Allgemeine Konventionen (Zeilenende, Encoding)
 
+- **Encoding**: ASCII, 7-bit clean.
+- **Line termination**: `\n` or `\r\n`. Firmware strips both.
+- **Max line length**: 127 characters (longer lines are truncated).
+- **Transport**: USART2 at 115200 8N1 (USB VCP). Same protocol planned for UART4 (Bluetooth).
+- **Direction**: `CMD:*` host → device, `STAT:*` / `DAT:*` device → host.
+
 ### 15.2 Kontrollbefehle (`CMD:CONN`, `CMD:RESET`, `CMD:CAL`, `CMD:MEAS`, `CMD:BTN:*`)
+
+| Command | Response | Description |
+|---------|----------|-------------|
+| `CMD:CONN` | `STAT:RDY` / `STAT:CAL` / `STAT:MEAS` / `STAT:MANUAL` | Handshake; response reflects current FSM state. |
+| `CMD:RESET` | `STAT:RESETTING` → MCU reset | Reboot via `NVIC_SystemReset()` after 20 ms. |
+| `CMD:CAL` | `STAT:CAL_REQ` → `STAT:CAL` → `STAT:CAL_OK` or `STAT:ERR` | Start air calibration (coarse + fine sweep). |
+| `CMD:MEAS` | `STAT:MEAS_REQ` → `STAT:MEAS` → `DAT:RES:…` or `STAT:ERR:MEAS_INVALID` | Start snow measurement. Rejected with `STAT:ERR` if no valid calibration. |
+| `CMD:BTN:PRESS` | `STAT:BTN_PRESS` | Simulate button press. |
+| `CMD:BTN:RELEASE` | `STAT:BTN_REL` | Simulate button release. |
 
 ### 15.3 Debug- und Status-Befehle (`CMD:LEDS`, `CMD:LCD`, `CMD:LOG`, `CMD:TRACE`)
 
+| Command | Response format | Description |
+|---------|-----------------|-------------|
+| `CMD:LEDS` | `STAT:LED:S:<0/1>:M:<0/1>:E:<0/1>:R:<0/1>` | LED snapshot (Status, Meas, Excite, Error). |
+| `CMD:LCD` | `DAT:LCD:L0:<text>` + `DAT:LCD:L1:<text>` | LCD line buffer contents. |
+| `CMD:LOG` | `DAT:LOG:D:<domain>:S:<state>:<msg>` per entry | Debug ring buffer dump. `STAT:LOG_EMPTY` if empty. |
+| `CMD:TRACE` | `DAT:TRACE:<mode>:<idx>:V:<volt>:A:<amp>` per sample | Last RF sweep trace. `STAT:TRACE_EMPTY` if empty. |
+
 ### 15.4 Mock-Befehle (`CMD:MOCK:RF:*`)
+
+| Command | Response | Default | Description |
+|---------|----------|---------|-------------|
+| `CMD:MOCK:RF:RES:<float>` | `STAT:MOCK_RF_RES` | 1.2 V | Set resonance voltage. |
+| `CMD:MOCK:RF:NOISE:<float>` | `STAT:MOCK_RF_NOISE` | 0.01 V | Set noise level. |
+| `CMD:MOCK:RF:BASE:<float>` | `STAT:MOCK_RF_BASE` | 1.0 V | Set base amplitude. |
+| `CMD:MOCK:RF:FAIL:ON` | `STAT:MOCK_RF_FAIL_ON` | off | Force all reads to return `NAN`. |
+| `CMD:MOCK:RF:FAIL:OFF` | `STAT:MOCK_RF_FAIL_OFF` | — | Resume normal mock operation. |
+
+Invalid mock commands return `STAT:MOCK_ERR`.
 
 ### 15.5 HAL-Board-Befehle (`CMD:HAL:*`)
 
+All `CMD:HAL:*` commands are **locked** unless manual mode is active (see 15.6). Returns `STAT:HAL_LOCKED` when locked. Invalid sub-commands return `STAT:HAL_CMD_ERR`.
+
+Successful commands emit both a legacy `STAT:HAL_*` acknowledgement and a structured `STAT:HW:*` push frame (see 15.7).
+
+| Command | Response | Notes |
+|---------|----------|-------|
+| `CMD:HAL:INIT` | `STAT:HAL_INIT_OK` | Re-initialise HAL board module. |
+| **LED** |||
+| `CMD:HAL:LED:SET:<id>:<0/1>` | `STAT:HAL_LED_<id>_ON/OFF` | IDs: 0=Status, 1=Meas, 2=Excite, 3=Error. |
+| `CMD:HAL:LED:GET:<id>` | `STAT:HAL_LED_<id>:<0/1>` | |
+| `CMD:HAL:LED:TOGGLE:<id>` | `STAT:HAL_LED_<id>_TOG` | |
+| **Button** |||
+| `CMD:HAL:BTN:READ` | `STAT:HAL_BTN:PRESSED/RELEASED` | Physical button state (PC13). |
+| **ADC** |||
+| `CMD:HAL:ADC:READ` | `STAT:HAL_ADC:<volts>V` | 12-bit → voltage. |
+| `CMD:HAL:ADC:RAW` | `STAT:HAL_ADC:<raw>` | 12-bit raw value. |
+| **DAC** |||
+| `CMD:HAL:DAC:SET:<ch>:<volts>` | `STAT:HAL_DAC_<ch>:<volts>V` | Ch 0 = freq (PA4), Ch 1 = Q (PA5). |
+| `CMD:HAL:DAC:RAW:<ch>:<val>` | `STAT:HAL_DAC_<ch>:<val>` | 12-bit raw (0–4095). |
+| **LCD** |||
+| `CMD:HAL:LCD:SET:<line>:<text>` | `STAT:HAL_LCD_L<line>_OK` | Line 0/1, pad/truncate to 16 chars. |
+| **PWM** |||
+| `CMD:HAL:PWM:START` | `STAT:HAL_PWM_START_OK` | Enable TIM1 CH2 output on PA9. |
+| `CMD:HAL:PWM:STOP` | `STAT:HAL_PWM_STOP_OK` | Disable PWM output. |
+| `CMD:HAL:PWM:GET` | `STAT:HAL_PWM_OK` | Returns current run/freq/duty via `STAT:HW:PWM:*`. |
+| `CMD:HAL:PWM:FREQ:<hz>` | `STAT:HAL_PWM_FREQ_OK` | Set frequency (e.g. 20000000). |
+| `CMD:HAL:PWM:DUTY:<0..100>` | `STAT:HAL_PWM_DUTY_OK` | Set duty cycle percent. |
+| **Gain** |||
+| `CMD:HAL:GAIN:SET:<0..3>` | `STAT:HAL_GAIN:<level>` | RF gain select (PC8/PC9). |
+| `CMD:HAL:GAIN:GET` | `STAT:HAL_GAIN:<level>` | |
+| **NINA** |||
+| `CMD:HAL:NINA:RST:<0/1>` | `STAT:HAL_NINA:RESET/RUN` | 0 = hold reset, 1 = run. |
+| `CMD:HAL:NINA:STOP:<0/1>` | `STAT:HAL_NINA:RUNNING/STOPPED` | 0 = run, 1 = stop. |
+
 ### 15.6 Manual-Mode-Befehle (`CMD:MANUAL:*`)
 
+| Command | Response | Description |
+|---------|----------|-------------|
+| `CMD:MANUAL:ON` | `STAT:MANUAL_ON_REQ` → `STAT:MANUAL_ON` | Enter manual mode from any state. Disables excitation/op-amp. Unlocks `CMD:HAL:*`. |
+| `CMD:MANUAL:OFF` | `STAT:MANUAL_OFF_REQ` → `STAT:MANUAL_OFF` | Return to IDLE. Locks `CMD:HAL:*` again. |
+
+While manual mode is active: `CMD:CAL` / `CMD:MEAS` → `STAT:MANUAL_ACTIVE` (rejected).
+
 ### 15.7 Antwortformate (`STAT:*`, `DAT:*`)
+
+**Status frames** (`STAT:*`):
+
+| Pattern | Example | Origin |
+|---------|---------|--------|
+| `STAT:<tag>` | `STAT:RDY`, `STAT:CAL_OK`, `STAT:ERR` | General status / ack. |
+| `STAT:LED:S:…:M:…:E:…:R:…` | `STAT:LED:S:1:M:0:E:0:R:0` | LED snapshot response. |
+| `STAT:BOOT_V2` | — | Emitted on power-up. |
+| `STAT:UART_RX:<mode>` | `STAT:UART_RX:DMA_IDLE` | RX mode report (once at boot). |
+| `STAT:RESET_CAUSE:<flags>` | `STAT:RESET_CAUSE:PIN` | RCC reset flags on boot. |
+| `STAT:HW:<payload>` | `STAT:HW:LED:0:1` | Push-style hardware state (for GUI). |
+
+**Data frames** (`DAT:*`):
+
+| Pattern | Example |
+|---------|---------|
+| `DAT:RES:ER:<ε'>:EI:<ε''>:DENS:<ρ>` | `DAT:RES:ER:1.540:EI:0.020:DENS:150.300` |
+| `DAT:LCD:L<0/1>:<text>` | `DAT:LCD:L0:IDLE` |
+| `DAT:TRACE:<mode>:<idx>:V:<v>:A:<a>` | `DAT:TRACE:CAL:0:V:0.500:A:1.230` |
+| `DAT:LOG:D:<domain>:S:<state>:<text>` | `DAT:LOG:D:STATE:S:IDLE:FSM:IDLE→CAL` |
+
+**Push-style hardware frames** (`STAT:HW:*`) — emitted after every successful `CMD:HAL:*`:
+
+| Frame | Values |
+|-------|--------|
+| `STAT:HW:LED:<id>:<0/1>` | LED state |
+| `STAT:HW:DAC:<ch>:V:<volts>` | DAC voltage |
+| `STAT:HW:DAC:<ch>:RAW:<val>` | DAC raw |
+| `STAT:HW:ADC:V:<volts>` / `RAW:<val>` | ADC readback |
+| `STAT:HW:GAIN:<0..3>` | RF gain |
+| `STAT:HW:BTN:<0/1>` | Button state |
+| `STAT:HW:NINA:RST:<0/1>` / `STOP:<0/1>` | NINA control |
+| `STAT:HW:PWM:RUN:<0/1>` / `FREQ:<hz>` / `DUTY:<pct>` | PWM state |
 
 ---
 
