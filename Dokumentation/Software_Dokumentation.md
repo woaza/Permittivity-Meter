@@ -1159,19 +1159,125 @@ Test coverage summary:
 
 ### 14.1 Überblick
 
+Three Python tools communicate with the firmware via the ASCII `CMD:*` / `STAT:*` / `DAT:*` protocol over USB CDC (ST-LINK VCP) at 115200 8N1:
+
+| Tool | Purpose | Hardware required |
+|------|---------|-------------------|
+| `pc_cli.py` | Interactive terminal + batch scripting | Optional (`loop://` for loopback) |
+| `pc_ui.py` | PySimpleGUI desktop panel with real-time HAL control | Recommended |
+| `run_hw_lifecycle.py` | Automated smoke test (boot → cal → meas → result) | Yes |
+
+All tools share a common `SerialClient` class (defined in `pc_cli.py`):
+
+```python
+@dataclass
+class SerialConfig:
+    port: str        # e.g. "COM7", "/dev/ttyACM0", "loop://"
+    baud: int        # default 115200
+    timeout: float   # default 0.2 s
+```
+
+| Method | Description |
+|--------|-------------|
+| `SerialClient(cfg)` | Open port, spawn background RX reader thread. |
+| `send_line(line)` | Encode + newline + write. |
+| `expect(count, timeout)` | Block until `count` RX lines received. |
+| `reset_target(pulse_s=0.08)` | DTR/RTS toggle for hardware reset. |
+| `close()` | Stop reader, close port. |
+
+Dependencies: `pyserial ≥ 3.5`, `PySimpleGUI ≥ 4.60` (GUI only), `pytest ≥ 8.0` (tests only). Install via `pip install -r tools/requirements.txt`.
+
 ### 14.2 PC CLI (`pc_cli.py`)
 
 #### 14.2.1 Funktionalität
 
+Interactive REPL with prompt `snow>`. Maps short-hand commands to firmware frames:
+
+| Command | Firmware frame |
+|---------|----------------|
+| `conn` | `CMD:CONN` |
+| `cal` | `CMD:CAL` |
+| `meas` | `CMD:MEAS` |
+| `manual-on` / `manual-off` | `CMD:MANUAL:ON` / `OFF` |
+| `btn-press` / `btn-release` | `CMD:BTN:PRESS` / `RELEASE` |
+| `leds` / `lcd` / `log` / `trace` | `CMD:LEDS` / `LCD` / `LOG` / `TRACE` |
+| `reset` | `CMD:RESET` + DTR/RTS pulse |
+| `send <RAW>` | Transmit arbitrary line verbatim |
+| `exit` / `quit` | Close session |
+
+HAL commands (require manual mode):
+
+| Command | Firmware frame |
+|---------|----------------|
+| `hal-led-set <id> <0/1>` | `CMD:HAL:LED:SET:<id>:<0/1>` |
+| `hal-led-get <id>` | `CMD:HAL:LED:GET:<id>` |
+| `hal-led-toggle <id>` | `CMD:HAL:LED:TOGGLE:<id>` |
+| `hal-adc-read` / `hal-adc-raw` | `CMD:HAL:ADC:READ` / `RAW` |
+| `hal-dac-set <ch> <V>` | `CMD:HAL:DAC:SET:<ch>:<V>` |
+| `hal-dac-raw <ch> <val>` | `CMD:HAL:DAC:RAW:<ch>:<val>` |
+| `hal-gain-set <lvl>` / `hal-gain-get` | `CMD:HAL:GAIN:SET:<lvl>` / `GET` |
+| `hal-btn-read` | `CMD:HAL:BTN:READ` |
+| `hal-lcd-set <line> <text>` | `CMD:HAL:LCD:SET:<line>:<text>` |
+| `hal-pwm-start` / `stop` / `get` | `CMD:HAL:PWM:START` / `STOP` / `GET` |
+| `hal-pwm-freq <hz>` / `hal-pwm-duty <0..100>` | `CMD:HAL:PWM:FREQ:<hz>` / `DUTY:<pct>` |
+| `hal-nina-rst <0/1>` / `hal-nina-stop <0/1>` | `CMD:HAL:NINA:RST:<0/1>` / `STOP:<0/1>` |
+
+Supports batch scripts: one command per line, `#` comments, `wait [<s>]` for delays.
+
 #### 14.2.2 Verwendung
+
+```bash
+python tools/pc_cli.py --port COM7                             # interactive
+python tools/pc_cli.py --port COM7 --script workflow.txt       # batch + interactive
+python tools/pc_cli.py --port COM7 --script workflow.txt --script-only  # batch only
+python tools/pc_cli.py --port loop://                          # loopback (no HW)
+```
+
+Arguments: `--port`, `--baud` (115200), `--timeout` (0.2), `--script`, `--delay` (0.25), `--script-only`.
 
 ### 14.3 GUI-Tool (PySimpleGUI)
 
 #### 14.3.1 Funktionalität
 
+Full-featured desktop panel with the following control groups:
+
+| Panel | Controls |
+|-------|----------|
+| **Connection** | Port/baud input, connect/disconnect/reset buttons, status display |
+| **Mode** | RX mode, reset cause, boot status, manual-mode toggle, CAL/MEAS buttons |
+| **RF Mock** | Fail toggle, resonance/noise/base inputs with apply |
+| **LED Indicators** | 4 coloured boxes (green = on, grey = off, red = error) |
+| **LED HAL** | Per-LED ON / OFF / TOGGLE / GET buttons (IDs 0–3) |
+| **LCD** | 2-line mirror (read-only) + set-line inputs |
+| **Button** | Press/release simulation + HW read |
+| **ADC** | Voltage + raw readback |
+| **DAC** | Per-channel slider (0.0–3.3 V, 0.01 step, 150 ms debounce) + raw input |
+| **PWM** | Start/stop/get, frequency + duty inputs |
+| **Gain** | Set/get RF gain (0–3) |
+| **NINA** | Reset/stop pin checkboxes |
+| **Serial Log** | Auto-scrolling RX log + raw command input |
+
+The GUI parses incoming `STAT:HW:*` push frames to update all indicators in real time (LED colours, DAC voltage feedback, PWM state, etc.). An optional auto-refresh timer polls `CMD:LEDS` and `CMD:LCD` at a configurable interval.
+
 #### 14.3.2 Verwendung
 
+```bash
+python tools/pc_ui.py --port COM4
+python tools/pc_ui.py --port COM4 --baud 115200
+```
+
 ### 14.4 Test-Skripte
+
+`run_hw_lifecycle.py` — automated smoke test. See Chapter 13.4.2 for details.
+
+Additional test data in `tools/testdata/`:
+
+| File | Purpose |
+|------|---------|
+| `serial_lifecycle_idle.log` | Captured UART transcript for offline pytest regression |
+| `all_commands_hw.txt` | Full HAL command surface script for live-hardware validation |
+
+`tools/cli_workflow.txt` — example CLI batch script exercising connect → LCD/LED snapshots → calibration → measurement → trace dump.
 
 ---
 
