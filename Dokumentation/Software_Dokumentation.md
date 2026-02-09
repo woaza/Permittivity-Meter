@@ -778,45 +778,168 @@ where `<domain>` is `STATE` / `EVENT` / `DRIVER` and `<state>` is the short stat
 
 ### 11.1 Überblick (ASCII-Protokoll)
 
+All host ↔ firmware communication uses newline-terminated ASCII frames over USART2 (USB VCP). Three frame prefixes define the direction and purpose:
+
+| Prefix | Direction | Purpose |
+|--------|-----------|---------|
+| `CMD:*` | Host → Device | Commands and requests |
+| `STAT:*` | Device → Host | Status responses, acknowledgements, errors |
+| `DAT:*` | Device → Host | Data payloads (results, traces, logs, LCD content) |
+
+An additional sub-prefix `STAT:HW:*` carries structured push-style hardware state frames for GUI updates.
+
 ### 11.2 BT-Manager / Protokoll-Parser (`bt_manager.c`)
 
 #### 11.2.1 Zweck und Verantwortlichkeit
 
+Central command parser and event dispatcher. Receives complete lines from the transport layer, matches command prefixes, routes to the appropriate handler, and emits `STAT:*` / `DAT:*` responses. Also maintains a BT event queue consumed by the FSM.
+
+Public API:
+
+| Function | Description |
+|----------|-------------|
+| `BT_Manager_Init(void)` | Reset event queue and manual-mode flag. |
+| `BT_ProcessIncoming(const char *buffer)` | Parse one command line and dispatch. |
+| `BT_PopEvent(void)` | Dequeue next `BT_Event_t` (or `BT_EVENT_NONE`). |
+| `BT_SendStatus(const char *tag)` | Send `STAT:<tag>\n`. |
+| `BT_SendResult(MeasurementResult_t r)` | Send `DAT:RES:ER:<ε'>:EI:<ε''>:DENS:<ρ>` (3 decimal places). |
+| `BT_SetManualMode(uint8_t en)` | Enable/disable manual-mode gate. |
+| `BT_IsManualMode(void)` | Query manual-mode flag. |
+
 #### 11.2.2 Protokollstruktur (`CMD:*`, `STAT:*`, `DAT:*`)
+
+Response examples:
+
+```
+STAT:BOOT_V2                              (status tag)
+STAT:HW:LED:0:1                           (push-style hardware frame)
+DAT:RES:ER:1.540:EI:0.020:DENS:150.300   (measurement result)
+DAT:TRACE:CAL:0:V:0.500:A:1.230          (trace sample)
+DAT:LOG:D:STATE:S:IDLE:FSM:IDLE→CAL      (debug log entry)
+DAT:LCD:L0:IDLE                           (LCD line content)
+```
 
 #### 11.2.3 Befehlsverarbeitung (`BT_ProcessIncoming`)
 
+The function performs prefix matching on the incoming line and routes to the first matching handler. Matching is by exact character count or `strncmp`.
+
 #### 11.2.4 Befehlsrouting und Dispatch
+
+| Prefix | Handler | Action |
+|--------|---------|--------|
+| `CMD:RESET` | direct | Send `STAT:RESETTING`, delay 20 ms, `NVIC_SystemReset()` |
+| `CMD:CONN` | `push_event()` | Enqueue `BT_EVENT_CONN` |
+| `CMD:CAL` | `push_event()` + send | Send `STAT:CAL_REQ`, enqueue `BT_EVENT_CAL` |
+| `CMD:MEAS` | `push_event()` + send | Send `STAT:MEAS_REQ`, enqueue `BT_EVENT_MEAS` |
+| `CMD:BTN:PRESS` | `handle_button_command()` | Send `STAT:BTN_PRESS` |
+| `CMD:BTN:RELEASE` | `handle_button_command()` | Send `STAT:BTN_REL` |
+| `CMD:LEDS` | `send_led_snapshot()` | Dump all 4 LED states |
+| `CMD:LCD` | `send_lcd_snapshot()` | Dump LCD line buffers as `DAT:LCD:L0/L1:…` |
+| `CMD:LOG` | `send_log_dump()` | Dump debug ring buffer as `DAT:LOG:…` lines |
+| `CMD:TRACE` | `send_trace_dump()` | Dump RF trace as `DAT:TRACE:…` lines |
+| `CMD:MANUAL:ON` | `push_event()` + send | Send `STAT:MANUAL_ON_REQ`, enqueue `BT_EVENT_MANUAL_ON` |
+| `CMD:MANUAL:OFF` | `push_event()` + send | Send `STAT:MANUAL_OFF_REQ`, enqueue `BT_EVENT_MANUAL_OFF` |
+| `CMD:MOCK:*` | `handle_mock_command()` | Route to BSP RF mock setters (see Ch. 4) |
+| `CMD:HAL:*` | `handle_hal_command()` | Route to HAL Board functions (see Ch. 3); **gated** — returns `STAT:HAL_LOCKED` if manual mode is not active |
+
+HAL sub-commands cover: `LED:SET/GET/TOGGLE`, `ADC:READ/RAW`, `DAC:SET/RAW`, `GAIN:SET/GET`, `BTN:READ`, `LCD:SET`, `PWM:START/STOP/GET/FREQ/DUTY`, `NINA:RST/STOP`, `INIT`. Invalid sub-commands return `STAT:HAL_CMD_ERR`.
 
 #### 11.2.5 Antwortgenerierung (`BT_Send`, `BT_Printf`)
 
+- `BT_SendStatus(tag)` → formats `"STAT:<tag>"` and calls `PC_HostBridge_Send()`.
+- `BT_SendResult(result)` → formats `"DAT:RES:ER:<ε_r>:EI:<ε_i>:DENS:<ρ>"` using `fmt_fixed_3()` (3 decimal places).
+- `output_hw_framef(fmt, …)` → formats `"STAT:HW:<payload>"` (max 96 bytes) for push-style hardware state updates.
+
 #### 11.2.6 Integration mit FSM (Event-Weiterleitung)
+
+BT event queue: 8-deep circular buffer (`BT_EVENT_QUEUE_SIZE = 8`). On overflow the oldest event is dropped. The FSM drains this queue each `FSM_RunOnce()` cycle via `BT_PopEvent()`.
+
+```c
+typedef enum {
+    BT_EVENT_NONE = 0,
+    BT_EVENT_CONN,
+    BT_EVENT_CAL,
+    BT_EVENT_MEAS,
+    BT_EVENT_MANUAL_ON,
+    BT_EVENT_MANUAL_OFF
+} BT_Event_t;
+```
 
 #### 11.2.7 Integration mit HAL Board (CMD:HAL:\*-Routing)
 
+All `CMD:HAL:*` commands are rejected with `STAT:HAL_LOCKED` unless the FSM is in `STATE_MANUAL_OPERATION` (checked via `BT_IsManualMode()`). On success each handler emits both a legacy `STAT:HAL_*` acknowledgement **and** a structured `STAT:HW:*` push frame so the PC GUI can update immediately.
+
 #### 11.2.8 Integration mit Mock Board (CMD:MOCK:\*-Routing)
+
+`handle_mock_command()` parses the sub-command after `CMD:MOCK:` and calls the corresponding `BSP_RF_Mock*` wrapper. Invalid payloads return `STAT:MOCK_ERR`. See Chapter 4.4 for the full command table.
 
 ### 11.3 USB CDC Bridge / USART2 Transport (`usb_cdc_bridge.c`)
 
 #### 11.3.1 Zweck (Zeilenweise Empfangs-/Sendeschnittstelle)
 
+Manages USART2 RX and TX. Receives raw bytes from the UART peripheral, assembles them into newline-terminated lines, queues them, and hands complete lines to `BT_ProcessIncoming()`. Sends response strings with automatic newline appending.
+
+Public API:
+
+| Function | Description |
+|----------|-------------|
+| `PC_HostBridge_Init(void)` | Select RX mode (DMA / IT / poll), arm receiver, report mode once. |
+| `PC_HostBridge_OnRx(const uint8_t *buf, uint32_t len)` | ISR callback — push raw bytes into the byte ring. |
+| `PC_HostBridge_Send(const char *str)` | Transmit a string on USART2 (appends `\n` if missing). |
+| `PC_HostBridge_Poll(void)` | Main-loop call: poll RX (if polling mode), assemble lines, drain line queue → `BT_ProcessIncoming()`. |
+
 #### 11.3.2 DMA Receive-to-Idle (bevorzugt)
+
+Preferred mode when `hdmarx != NULL` and the system clock is not in fallback. Uses `HAL_UARTEx_ReceiveToIdle_DMA()` with a 256-byte DMA buffer. The half-transfer interrupt is disabled to reduce overhead. On idle-line detection the ISR copies received bytes into a shadow buffer, **re-arms the DMA immediately** (minimising dead time), then pushes the copied bytes into the byte ring.
+
+Boot status: `STAT:UART_RX:DMA_IDLE`.
 
 #### 11.3.3 Interrupt-basierter RX (Fallback)
 
+If no DMA channel is available but the clock is stable, `HAL_UARTEx_ReceiveToIdle_IT()` is used with the same 256-byte buffer and identical re-arm-then-process strategy.
+
+Boot status: `STAT:UART_RX:IT_IDLE`.
+
 #### 11.3.4 Polling RX (Clock-Fallback)
+
+Activated only when `g_clock_fallback_active` is set **and** no RX DMA is available. `PC_HostBridge_Poll()` reads up to 256 bytes per call from the UART RDR register, pushing each byte into the ring buffer. ORE (overrun) flags are cleared before each read.
+
+Boot status: `STAT:UART_RX:POLL`.
 
 #### 11.3.5 RX-Byte-Ringpuffer
 
+512-byte circular buffer (`RX_BYTE_RING_SIZE = 512`). ISR writes via `rx_ring_push_byte()`; main loop reads via `rx_ring_pop_byte()`. On overflow the oldest byte is dropped and `"rxring_ovf"` is logged.
+
 #### 11.3.6 RX-Line-Queue (zeilenweise Verarbeitung)
 
+32-entry queue of 128-byte strings (`RX_LINE_QUEUE_SIZE = 32`). `PC_HostBridge_Poll()` pops bytes from the ring, appends to a 128-byte working buffer until `\n` or `\r` is seen, then enqueues the complete line. On queue overflow the oldest line is dropped (`"rxq_ovf"` logged). Lines exceeding 127 characters are truncated and logged as `"overflow"`.
+
+After assembly, the poll function drains up to 32 lines per call and passes each to `BT_ProcessIncoming()`.
+
 #### 11.3.7 TX-Ausgabe
+
+`PC_HostBridge_Send()` copies up to 158 bytes into a 160-byte local buffer, appends `\n` if not already present, and calls `HAL_UART_Transmit()` with a 200 ms timeout. TX failures are logged as `"tx_fail"`.
+
+Buffer sizes summary:
+
+| Buffer | Size | Purpose |
+|--------|------|---------|
+| RX byte ring | 512 B | ISR → main-loop bridge |
+| RX-to-idle DMA/IT | 256 B × 2 | DMA target + shadow copy |
+| RX working buffer | 128 B | Line assembly |
+| RX line queue | 32 × 128 B | Complete-line FIFO |
+| TX output buffer | 160 B | UART transmit formatting |
+| BT event queue | 8 entries | Command → FSM event bridge |
 
 ### 11.4 Bluetooth-Kommunikation (`bt_communication.c`) (geplant)
 
 #### 11.4.1 UART4 / NINA-Modul
 
+The NINA Bluetooth module is connected via UART4 (PA0 TX / PA1 RX). Hardware control pins (`NINA:RST`, `NINA:STOP`) are accessible through `CMD:HAL:NINA:*` in manual mode. The UART4 peripheral is initialised by CubeMX but **no firmware RX/TX logic is implemented yet**.
+
 #### 11.4.2 Geplante Integration in den Protokoll-Parser
+
+The planned approach mirrors the USB path: a second `HostBridge` instance for UART4 with its own byte ring and line queue, feeding received lines into the same `BT_ProcessIncoming()` parser. Responses would be echoed to both transports so the PC and Bluetooth app see identical output. This is tracked as a development TODO (see Chapter 17).
 
 ---
 
