@@ -630,11 +630,45 @@ All events are logged under domains `"RF_CAL"` or `"RF_MEAS"` via `Debug_LogDriv
 
 ### 8.1 Zweck (Sweep-Daten-Aufzeichnung)
 
+Records voltage/amplitude sample pairs during calibration and measurement sweeps so they can be dumped to the host for visualisation and debugging. The trace buffer is filled automatically by `sample_at()` in `rf_measure.c` and read out via `CMD:TRACE`.
+
 ### 8.2 Bereitgestellte Funktionen
+
+| Function | Description |
+|----------|-------------|
+| `RF_Trace_Begin(RF_TraceMode_t mode)` | Start a new trace session; resets sample count, sets mode (`RF_TRACE_MODE_CALIBRATION` or `RF_TRACE_MODE_MEASUREMENT`). |
+| `RF_Trace_Add(float voltage, float amplitude)` | Append one sample. Silently ignored if the buffer is full or tracing is not active. |
+| `RF_Trace_End(void)` | Stop accepting samples; clears the active flag. |
+| `RF_Trace_Copy(RFTraceSample_t *out, size_t max, RF_TraceMode_t *out_mode)` | Copy collected samples into a caller-provided buffer; returns the number copied. Stores the mode in `*out_mode` if non-NULL. |
+| `RF_Trace_GetMode(void)` | Return current trace mode. |
+| `RF_Trace_GetCount(void)` | Return number of samples collected. |
+
+Types:
+
+```c
+typedef enum { RF_TRACE_MODE_NONE, RF_TRACE_MODE_CALIBRATION,
+               RF_TRACE_MODE_MEASUREMENT } RF_TraceMode_t;
+
+typedef struct { float voltage; float amplitude; } RFTraceSample_t;
+```
+
+Buffer depth: `RF_TRACE_MAX_SAMPLES = 128`.
 
 ### 8.3 Datenformat und Ausgabe (`DAT:TRACE:*`)
 
+When the host sends `CMD:TRACE`, `bt_manager.c` calls `RF_Trace_Copy()` and emits one line per sample:
+
+```
+DAT:TRACE:<mode>:<index>:V:<voltage>:A:<amplitude>
+```
+
+where `<mode>` is `CAL` or `MEAS`, `<index>` is 0-based, and voltage/amplitude are formatted as floats.
+
 ### 8.4 Nutzung zur Diagnose
+
+- Plot the sweep curve on the PC to verify the parabolic shape and confirm the minimum location.
+- Compare calibration and measurement traces to visualise the resonance shift.
+- Detect anomalies: flat curves (no resonance), excessive noise, or NAN samples indicating hardware faults.
 
 ---
 
@@ -642,17 +676,52 @@ All events are logged under domains `"RF_CAL"` or `"RF_MEAS"` via `Debug_LogDriv
 
 ### 9.1 Zweck und Verantwortlichkeit
 
+Provides the physical conversion from DAC varicap voltages to electrical parameters (capacitance, permittivity). Called by `rf_measure.c` after the sweep to translate the observed voltage shift into material properties.
+
 ### 9.2 Permittivitätsberechnung
+
+```c
+void Math_CalculateEpsilon(float v_air, float v_snow,
+                            float *epsilon_r, float *epsilon_i);
+```
+
+1. Convert both voltages to capacitance via `Math_Varicap_VtoC()`.
+2. Compute real part: `ε' = 1.0 + 0.5 × (C_air / C_snow)`.
+3. Compute imaginary part: `ε'' = 0.01 + 0.02 × (v_air − v_snow)`.
+
+`Math_Varicap_VtoC(float voltage_v)` maps a varicap voltage (0.0 – 2.5 V) to capacitance (pF) using an 11-point look-up table with linear interpolation between entries. Voltages outside the table range are clamped to the boundary values.
+
+LUT (abridged):
+
+| Voltage (V) | Capacitance (pF) |
+|-------------|-------------------|
+| 0.00 | 190 |
+| 0.50 | 120 |
+| 1.00 | 85 |
+| 1.50 | 62 |
+| 2.00 | 48 |
+| 2.50 | 39 |
 
 ### 9.3 Signalverarbeitung (Undersampling / Bandpass Sampling)
 
 #### 9.3.1 Prinzip des Undersamplings
 
+The RF signal is at 20 MHz, well above the STM32 ADC Nyquist limit (~5 Msps). Bandpass sampling deliberately violates the baseband Nyquist criterion: choosing a sampling rate f_s such that the 20 MHz signal aliases to a low IF frequency f_IF that the ADC can resolve.
+
 #### 9.3.2 Alias-Frequenz-Berechnung
+
+`f_IF = |20 MHz − N × f_s|` where N is the nearest integer multiple. For example, f_s ≈ 800.1 kHz aliases 20 MHz to ~2.5 kHz.
 
 #### 9.3.3 DFT/Goertzel-Algorithmus (geplant)
 
+Not yet implemented. The planned approach: capture a DMA buffer of ~256 ADC samples and compute the magnitude at f_IF using a single-bin Goertzel algorithm. This will replace the current single-point `BSP_RF_ReadAmplitude()` call and improve noise rejection significantly.
+
 ### 9.4 Fehlerbetrachtung und Genauigkeit
+
+- **LUT resolution**: 11 points over 2.5 V → 0.25 V spacing; linear interpolation introduces ≤ ~2 % error between nodes given the monotonic C(V) curve.
+- **ε' model**: The current formula (`1.0 + 0.5 × C_air/C_snow`) is a simplified placeholder. A full electromagnetic model is required for production accuracy.
+- **ε'' model**: Linear in voltage difference — adequate for relative comparisons but not for absolute loss-tangent measurement.
+- **Noise**: Without DFT integration the single-point amplitude read is susceptible to wideband noise; implementing Goertzel will improve SNR by ≈ 10× (narrowband filtering).
 
 ---
 
@@ -660,11 +729,48 @@ All events are logged under domains `"RF_CAL"` or `"RF_MEAS"` via `Debug_LogDriv
 
 ### 10.1 Zweck (interner Ringpuffer für Diagnose)
 
+Centralised logging facility used by the FSM, event handlers, and driver layers. Entries are stored in the mock board's 32-deep circular buffer and can be retrieved via `CMD:LOG`.
+
 ### 10.2 Bereitgestellte Funktionen
+
+| Function | Description |
+|----------|-------------|
+| `Debug_LogState(const char *tag, AppState_t from, AppState_t to)` | Log a state transition. Formatted as `"TAG:FROM→TO"` (e.g. `"FSM:IDLE→CAL"`). Updates the internal `s_last_state`. |
+| `Debug_LogEvent(const char *source, const char *detail)` | Log an event in the current state. Formatted as `"SOURCE:DETAIL"` (e.g. `"BT:CMD_CAL"`). |
+| `Debug_LogDriver(const char *component, const char *detail)` | Log a driver-level action. Formatted as `"COMPONENT:DETAIL"` (e.g. `"RF:gain=2"`). |
+| `Debug_LogCopy(DebugLogEntry_t *out, size_t max)` | Copy up to `max` entries into a caller buffer; returns count copied. Delegates to `MockBoard_DebugCopy()`. |
+| `Debug_LogGetLast(void)` | Return the text of the most recent entry (via `MockBoard_DebugGetLast()`). |
+| `Debug_LogClear(void)` | Reset log state to `STATE_INIT` and clear the buffer. |
+
+Entry structure:
+
+```c
+typedef struct {
+    DebugLogDomain_t domain;      // STATE, EVENT, or DRIVER
+    AppState_t       state;       // FSM state at time of logging
+    char             text[48];    // formatted message (max 47 chars + NUL)
+} DebugLogEntry_t;
+```
 
 ### 10.3 Log-Domänen und Filterung
 
+| Domain | Enum | Producers |
+|--------|------|-----------|
+| State transitions | `DEBUG_LOG_DOMAIN_STATE` | `FSM_HandleStateChange()` |
+| Events | `DEBUG_LOG_DOMAIN_EVENT` | `bt_manager.c`, button handler |
+| Driver actions | `DEBUG_LOG_DOMAIN_DRIVER` | `bsp_rf.c`, `rf_measure.c`, HAL wrappers |
+
+State names in log output: `INIT`, `IDLE`, `MAN`, `CAL`, `MEAS`, `CALC`, `ERR` (mapped by internal `state_to_string()`).
+
 ### 10.4 Ausgabe über `CMD:LOG`
+
+When the host sends `CMD:LOG`, the protocol parser calls `Debug_LogCopy()` and emits one line per entry:
+
+```
+DAT:LOG:D:<domain>:S:<state>:<text>
+```
+
+where `<domain>` is `STATE` / `EVENT` / `DRIVER` and `<state>` is the short state name. The buffer is **not** cleared automatically after a dump — use separate logic or firmware restart to reset.
 
 ---
 
