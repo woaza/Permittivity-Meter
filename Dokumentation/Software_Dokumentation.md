@@ -1409,13 +1409,85 @@ While manual mode is active: `CMD:CAL` / `CMD:MEAS` → `STAT:MANUAL_ACTIVE` (re
 
 ### 16.1 Projektstruktur (Verzeichnisse und Dateien)
 
+```
+Permittivity-Meter/
+├── README.md                       Main firmware documentation
+├── ToDos.md / Milestones.md        Development roadmap
+├── Dokumentation/                  Hardware & signal-path docs
+├── tools/                          PC utilities (CLI, GUI, tests)
+├── tests/                          Host-side C unit tests (CMake)
+├── PermittivityMeterV2/
+│   └── PermitivityMeterV2/
+│       ├── PermitivityMeterV2.ioc          CubeMX device config
+│       ├── STM32L476RGTX_FLASH.ld          Linker script (Flash)
+│       ├── STM32L476RGTX_RAM.ld            Linker script (RAM)
+│       ├── Core/
+│       │   ├── Src/                        Application source
+│       │   │   ├── main.c, fsm_main.c, rf_measure.c, …
+│       │   │   ├── hl/                     HAL driver wrappers
+│       │   │   ├── mocks/                  Mock board
+│       │   │   └── test/                   On-target test code
+│       │   ├── Inc/                        Application headers
+│       │   └── Startup/                    startup_stm32l476rgtx.s
+│       └── Drivers/
+│           ├── STM32L4xx_HAL_Driver/       ST HAL library
+│           └── CMSIS/                      Cortex CMSIS core
+└── NINA software von okorn/        Legacy BT module code (not part of V2)
+```
+
 ### 16.2 Build-Umgebung und Toolchain
+
+| Component | Details |
+|-----------|---------|
+| IDE | STM32CubeIDE (Eclipse-based CDT) |
+| Compiler | ARM GCC (`arm-none-eabi-gcc`) |
+| FPU | FPv4-SP-D16, hard float ABI |
+| Debug level | `-g3` (full symbols) |
+| Code generator | STM32CubeMX (`.ioc` file) |
+| Debugger | ST-LINK (integrated on Nucleo) |
+| Unit tests | CMake + GCC on host PC |
 
 ### 16.3 Compiler-Flags und Defines
 
+Firmware defines:
+
+| Define | Purpose |
+|--------|---------|
+| `DEBUG` | Enable debug features |
+| `USE_HAL_DRIVER` | Use ST HAL library |
+| `STM32L476xx` | Target MCU family |
+| `UART_SMOKE_TEST` (0/1) | If 1: minimal USART2 echo firmware for bring-up |
+
+Unit test defines:
+
+| Define | Purpose |
+|--------|---------|
+| `UNIT_TESTS=1` | Replace HAL calls with mock stubs; enables host-side compilation |
+
 ### 16.4 Linker-Konfiguration
 
+Memory regions (`STM32L476RGTX_FLASH.ld`):
+
+| Region | Start | Size | Purpose |
+|--------|-------|------|---------|
+| FLASH | `0x08000000` | 1024 KB | Program code + constants |
+| RAM | `0x20000000` | 96 KB | Data, BSS, stack, heap |
+| RAM2 | `0x10000000` | 32 KB | CCM (optional) |
+
+Stack: 1 KB (`_Min_Stack_Size = 0x400`). Heap: 512 B (`_Min_Heap_Size = 0x200`).
+
+Key sections: `.isr_vector` → FLASH (interrupt vectors), `.text` → FLASH, `.rodata` → FLASH, `.data` → RAM (initialised from FLASH), `.bss` → RAM.
+
 ### 16.5 Abhängigkeiten (STM32 HAL, CMSIS)
+
+| Library | Version | Source |
+|---------|---------|--------|
+| STM32L4xx HAL Driver | CubeMX-generated | `Drivers/STM32L4xx_HAL_Driver/` |
+| CMSIS Core | ARM CMSIS 5 | `Drivers/CMSIS/` |
+| CMSIS Device | STM32L4xx device headers | `Drivers/CMSIS/Device/ST/STM32L4xx/` |
+| pyserial | ≥ 3.5 | PC tools (serial communication) |
+| PySimpleGUI | ≥ 4.60 | PC GUI tool only |
+| pytest | ≥ 8.0 | PC-side test runner |
 
 ---
 
@@ -1423,6 +1495,60 @@ While manual mode is active: `CMD:CAL` / `CMD:MEAS` → `STAT:MANUAL_ACTIVE` (re
 
 ### 17.1 Aktuelle Limitierungen
 
+| Limitation | Impact | Workaround |
+|------------|--------|------------|
+| `bsp_rf.c` delegates exclusively to mock board | No real RF measurement possible | Use `CMD:MOCK:RF:*` for simulated sweeps |
+| No undersampling / DFT implemented | Single-point amplitude read, no narrowband filtering | Planned Goertzel algorithm (Ch. 9.3.3) |
+| UART4 / NINA BT transport not wired | Bluetooth control unavailable | Use USART2 (USB VCP) only |
+| LCD is buffer-only (no I2C flush) | Physical display not updated | Read buffer via `CMD:LCD` |
+| Permittivity formula is placeholder | `ε' = 1 + 0.5×C_air/C_snow` — not production-grade | Replace with Denoth's model |
+| Snow density is linear estimate | `ρ = 0.3 + shift × 0.1` | Replace with validated empirical model |
+| PWM output is 3.3 Vpp | RF circuit needs ≤ 1 Vpp excitation | External OpAmp attenuator required (HW) |
+| No `CMD:RF:STAT` readback | Cannot query instantaneous RF state | Infer from `CMD:TRACE` or `CMD:LEDS` |
+| `CMD:HAL:*` implemented but not fully tested | May have edge-case issues | Test coverage in `test_hw_command_surface.py` |
+
 ### 17.2 Geplante Erweiterungen
 
+**Phase 1 — Hardware prerequisites** (blocking):
+- [ ] Add OpAmp buffer/divider after PA9 (3.3 V → 1 Vpp)
+- [ ] Verify varicap wiring PA4/PA5 → D1/D2
+
+**Phase 2 — Mock-to-hardware transition** (high priority):
+- [ ] Replace `MockBoard_RF_*` calls in `bsp_rf.c` with `HL_DAC_SetVoltage()` + `HL_ADC_Read()`
+- [ ] Add settling delay in `sample_at()` for varicap response time
+- [ ] Validate DAC voltages on multimeter and PWM on oscilloscope
+
+**Phase 3 — Signal processing (undersampling)**:
+- [ ] Configure TIM6 to ~800.1 kHz for bandpass sampling of 20 MHz
+- [ ] Implement `BSP_RF_CaptureBuffer()` with DMA
+- [ ] Implement Goertzel single-bin magnitude in `math_model.c`
+- [ ] Replace single-point reads with buffer + DFT in `rf_measure.c`
+
+**Phase 4 — Calibration & measurement algorithms**:
+- [ ] Implement Denoth's formula: `ε' = 1 + k_D × log(V_M / V_Ref)`
+- [ ] Two-varicap sweep: coarse on D1 (PA4), fine on D2 (PA5)
+
+**Phase 5 — UI & communication**:
+- [ ] Display formatted result on LCD (e.g. `"E:1.54 D:0.32"`)
+- [ ] Wire UART4 RX/TX transport for Bluetooth
+- [ ] Echo responses to both USB and BT transports
+- [x] ~~USB input via USART2~~ — done (DMA Receive-to-Idle)
+
+**Phase 6 — Power & environmental**:
+- [ ] Component selection for −40…+85 °C operation
+- [ ] Battery input + regulator design
+- [ ] Define final "Permittivity Shield v1.0" pinout
+
 ### 17.3 Offene To-Dos (siehe ToDos.md / Milestones.md)
+
+No `TODO` or `FIXME` comments remain in the active V2 source code (`Core/`). All tracked development items are maintained in `ToDos.md` and `Milestones.md` at the repository root.
+
+Critical blockers:
+
+| Blocker | Status | Impact |
+|---------|--------|--------|
+| OpAmp attenuation (Phase 1.1) | Not started | Cannot drive RF circuit safely |
+| BSP → real HAL (Phase 2.1) | Mock only | No real measurements |
+| Undersampling DSP (Phase 3) | Not started | Single-point sampling, high noise |
+| Permittivity formula (Phase 4) | Placeholder | Results not physically meaningful |
+| UART4 / NINA transport (Phase 5.2) | Not started | No Bluetooth |
