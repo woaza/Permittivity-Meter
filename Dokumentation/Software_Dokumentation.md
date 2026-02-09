@@ -18,11 +18,83 @@
 
 ### 2.1 Projektbeschreibung
 
+The Permittivity Meter is an embedded device that measures the dielectric properties (permittivity, density) of materials — primarily snow — using an RF resonance circuit. A 20 MHz excitation signal drives a resonator whose resonance frequency shifts depending on the material under test. The firmware sweeps a DAC-controlled varicap voltage range, detects the resonance dip, and calculates the permittivity from the frequency shift between an air calibration and the material measurement.
+
+The system is controlled via an ASCII command protocol (`CMD:*` / `STAT:*` / `DAT:*`) over USB (USART2). A Bluetooth interface (UART4 / NINA module) is planned. A built-in mock layer allows full-cycle testing without RF hardware.
+
 ### 2.2 Architekturübersicht (Layer-Diagramm)
+
+```
+┌──────────────────────────────────────────────────────┐
+│  PC / Host                                           │
+│  (CLI, GUI, Test Scripts)                            │
+└────────────────────────┬─────────────────────────────┘
+                         │ ASCII over USART2 (USB VCP)
+┌────────────────────────▼─────────────────────────────┐
+│  Transport Layer                                     │
+│  usb_cdc_bridge.c  (DMA Receive-to-Idle, line queue) │
+└────────────────────────┬─────────────────────────────┘
+                         │ complete lines
+┌────────────────────────▼─────────────────────────────┐
+│  Protocol Layer                                      │
+│  bt_manager.c  (CMD parser, STAT/DAT responses)      │
+│  debug_log.c   (ring-buffer logging)                 │
+└──────┬─────────────────┬─────────────────┬───────────┘
+       │ FSM events      │ CMD:HAL:*       │ CMD:MOCK:*
+┌──────▼──────┐   ┌──────▼──────┐   ┌─────▼──────┐
+│ Application │   │ HAL Board   │   │ Mock Board │
+│ fsm_main.c  │   │ hal_board.c │   │ mock_board │
+│ rf_measure  │   │ (Manual Mode│   │ (RF sim)   │
+│ rf_trace    │   │  direct HW) │   │            │
+│ math_model  │   └──────┬──────┘   └─────┬──────┘
+└──────┬──────┘          │                │
+       │                 │                │
+┌──────▼─────────────────┴────────────────┴────────────┐
+│  BSP Layer  (Board Support Package)                  │
+│  bsp_rf.c   — RF frontend (switch: mock ↔ real HW)  │
+│  bsp_ui.c   — Button + LEDs                         │
+│  bsp_lcd.c  — LCD buffer (I2C)                      │
+└────────────────────────┬─────────────────────────────┘
+                         │
+┌────────────────────────▼─────────────────────────────┐
+│  HAL Driver Layer  (hl/)                             │
+│  hal_gpio.c, hal_dac.c, hal_adc.c, hal_pwm.c        │
+└────────────────────────┬─────────────────────────────┘
+                         │
+┌────────────────────────▼─────────────────────────────┐
+│  STM32 HAL / CMSIS  (vendor library, CubeMX generated│)
+└────────────────────────┬─────────────────────────────┘
+                         │
+                  [ STM32L476RG ]
+```
 
 ### 2.3 Zielhardware (STM32L476RG / NUCLEO-L476RG)
 
+| Parameter | Value |
+|-----------|-------|
+| MCU | STM32L476RG (ARM Cortex-M4F, 80 MHz) |
+| Board | NUCLEO-L476RG |
+| System Clock | 80 MHz (HSE 20 MHz; MSI fallback if HSE fails) |
+| USB Interface | USART2 via ST-LINK VCP (PA2/PA3) |
+| Bluetooth | UART4 / NINA module (PA0/PA1) — planned |
+| DAC | 2 channels — PA4 (frequency tuning), PA5 (Q-factor tuning) |
+| ADC | Bandpass-sampled at ~122.5 kHz (undersampling of 20 MHz RF) |
+| PWM Excitation | TIM1 CH2 on PA9, 20 MHz square wave (attenuated to 1 Vpp via external OpAmp) |
+| UI | 1 button (PC13), 4 LEDs (PA6, PA7, PC7, PB6), I2C LCD (PB8/PB9) |
+| RF Gain Select | 2-bit GPIO (PC8, PC9) |
+
 ### 2.4 Softwareschichten im Überblick
+
+| Layer | Files | Responsibility |
+|-------|-------|----------------|
+| **Application / FSM** | `fsm_main.c`, `rf_measure.c`, `rf_trace.c`, `math_model.c` | State machine (INIT → IDLE → CAL → MEAS → ERROR), sweep algorithms (coarse/fine), trace capture, permittivity math |
+| **Protocol** | `bt_manager.c`, `debug_log.c` | ASCII command parsing (`CMD:*`), response generation (`STAT:*`, `DAT:*`), event dispatch to FSM, debug ring buffer |
+| **Transport** | `usb_cdc_bridge.c`, `bt_communication.c` (planned) | USART2 DMA Receive-to-Idle with byte ring buffer and line queue; future UART4/BT transport |
+| **BSP** | `bsp_rf.c`, `bsp_ui.c`, `bsp_lcd.c` | Hardware abstraction: RF frontend (currently mock-backed), button/LED management, LCD line buffer over I2C |
+| **Mock Board** | `mocks/mock_board.c` | Simulated RF response (parabolic dip model) for testing without hardware |
+| **HAL Board** | `hl/hal_board.c` | Direct hardware control wrappers for manual-mode commands (`CMD:HAL:*`) |
+| **HAL Drivers** | `hl/hal_gpio.c`, `hl/hal_dac.c`, `hl/hal_adc.c`, `hl/hal_pwm.c` | Thin wrappers around STM32 HAL for GPIO, DAC, ADC, PWM |
+| **Vendor HAL** | `Drivers/STM32L4xx_HAL_Driver/`, CMSIS | ST-provided HAL library and CMSIS core (CubeMX generated) |
 
 ---
 
