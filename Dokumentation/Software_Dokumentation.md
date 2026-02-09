@@ -323,35 +323,173 @@ The current implementation is **buffer-only** — no I2C transactions are perfor
 
 ### 6.1 Überblick und Verantwortlichkeit
 
+The FSM is the central coordinator of the firmware. It owns the application lifecycle — initialisation, calibration, measurement, result display, manual override, and error recovery. It consumes events from the button and the BT protocol parser, drives BSP outputs (LEDs, LCD, RF enable), and delegates measurement work to `rf_measure.c`.
+
+Public API:
+
+| Function | Description |
+|----------|-------------|
+| `FSM_Init(void)` | Reset FSM to `STATE_INIT`, clear event queue. |
+| `FSM_PostEvent(FSM_Event_t event)` | Enqueue an event for the next cycle. |
+| `FSM_RunOnce(void)` | Execute one FSM cycle (poll button, drain BT events, process queue, run state handler). |
+| `FSM_GetState(void)` | Return current `AppState_t`. |
+
 ### 6.2 Zustandsdiagramm
+
+```
+                  ┌──────────────────────────────────────────────┐
+                  │           BT_MANUAL_ON (from any state)      │
+                  ▼                                              │
+           ┌──────────────┐  BT_MANUAL_OFF  ┌──────────┐        │
+           │   MANUAL     │────────────────►│  IDLE    │◄───┐   │
+           │  OPERATION   │                 │          │    │   │
+           └──────────────┘                 └────┬─────┘    │   │
+                                                 │          │   │
+                              ┌───────────────┬──┴──────┐   │   │
+                              │ BTN / BT_CAL  │BTN(cal  │   │   │
+                              │ (no valid cal)│valid) / │   │   │
+                              │               │BT_MEAS  │   │   │
+                              ▼               ▼         │   │   │
+       ┌─────────┐    ┌──────────────┐ ┌───────────┐   │   │   │
+       │  INIT   │───►│ CALIBRATION  │ │  MEASURE  │   │   │   │
+       │         │    │              │ │  SEARCH   │   │   │   │
+       └─────────┘    └──────┬───────┘ └─────┬─────┘   │   │   │
+         ▲                   │               │         │   │   │
+         │          CAL_DONE │      MEAS_DONE│         │   │   │
+         │          (valid)  │      (valid)  │         │   │   │
+         │               ┌──►│◄──────────┐   │         │   │   │
+         │               │   ▼           │   ▼         │   │   │
+         │               │  IDLE ◄───── CALCULATION ───┘   │   │
+         │               │              (result sent,      │   │
+         │               │               cal invalidated)  │   │
+         │               │                                 │   │
+         │    CAL_DONE   │    MEAS_DONE                    │   │
+         │    (invalid)  │    (invalid)                    │   │
+         │               ▼                                 │   │
+         │         ┌──────────┐                            │   │
+         └─────────┤  ERROR   │────────────────────────────┘   │
+          BTN /    │          │                                 │
+          BT_CONN  └──────────┘                                │
+```
 
 ### 6.3 Zustände im Detail
 
 #### 6.3.1 `STATE_INIT`
 
+On entry: clear queue, initialise BSP RF / UI / LCD, disable excitation and op-amp, set `LED_STATUS` on, display `"INIT" / "Booting..."`, enqueue `FSM_EVENT_INIT_DONE`. The handler dequeues `INIT_DONE` and transitions to IDLE.
+
 #### 6.3.2 `STATE_IDLE`
+
+On entry: `LED_STATUS` on, others off, disable excitation/op-amp, clear pending flags. LCD shows `"IDLE" / "Ready"` (if calibration valid) or `"IDLE" / "Need CAL"`.
+
+Handler:
+- **Button press** → CALIBRATION if no valid calibration; MEASURE_SEARCH if calibration valid.
+- **`BT_CAL`** → CALIBRATION.
+- **`BT_MEAS`** → MEASURE_SEARCH (rejected with `STAT:ERR` if calibration invalid).
+- **`BT_CONN`** → sends `STAT:RDY`, stays in IDLE.
 
 #### 6.3.3 `STATE_CALIBRATION`
 
+On entry: set `s_calibration_pending`, enable `LED_MEAS` + `LED_EXCITE`, enable op-amp and excitation, LCD `"CAL" / "Sweeping..."`.
+
+Handler: calls `RF_PerformAirCalibration()`, enqueues `CAL_DONE`. On `CAL_DONE`: if `s_calibration.is_valid` → IDLE + `STAT:CAL_OK`; else → ERROR + `STAT:ERR`. LED blink on `LED_MEAS` every 4 FSM cycles during sweep.
+
 #### 6.3.4 `STATE_MEASURE_SEARCH`
+
+On entry: set `s_measurement_pending`, enable `LED_MEAS` + `LED_EXCITE`, enable op-amp and excitation, LCD `"MEAS" / "Sampling..."`.
+
+Handler: calls `RF_PerformSnowMeasurement(s_calibration)`, enqueues `MEAS_DONE`. On `MEAS_DONE`: if `FSM_IsMeasurementValid()` → CALCULATION; else → ERROR + `STAT:ERR:MEAS_INVALID`.
 
 #### 6.3.5 `STATE_MANUAL_OPERATION`
 
+On entry: immediately disable excitation and op-amp (safety), clear pending flags, `LED_STATUS` on, LCD `"MANUAL" / "HAL cmds OK"`, send `STAT:MANUAL_ON`.
+
+Can be entered from **any state** via `BT_MANUAL_ON`. `BT_MANUAL_OFF` → IDLE. `BT_CAL` / `BT_MEAS` rejected with `STAT:MANUAL_ACTIVE`. `CMD:HAL:*` commands are only accepted while in this state.
+
 #### 6.3.6 `STATE_ERROR`
 
+On entry: disable excitation/op-amp, all LEDs off except `LED_ERROR`, LCD `"ERROR" / "Check host"`.
+
+Recovery: button press or `BT_CONN` → INIT (full reinitialisation). `BT_CAL` / `BT_MEAS` rejected with `STAT:ERR`.
+
 #### 6.3.7 `STATE_CALCULATION` (geplant)
+
+On entry: disable excitation, `LED_EXCITE` off, **invalidate calibration** (`s_calibration.is_valid = 0`), display result on LCD (`"ER X.XX EI Y.YY" / "D Z.ZZkg/m3"`), send `DAT:RES:…` via `BT_SendResult()`.
+
+Button press → IDLE (acknowledge). `BT_CAL` → CALIBRATION (new cycle). `BT_MEAS` rejected (`STAT:ERR:NEED_CAL` — must recalibrate after each measurement).
 
 ### 6.4 Events und Event-Queue
 
 #### 6.4.1 FSM-Event-Typen
 
+```c
+typedef enum {
+    FSM_EVENT_NONE = 0,
+    FSM_EVENT_INIT_DONE,
+    FSM_EVENT_BUTTON_PRESS,
+    FSM_EVENT_BT_CONN,
+    FSM_EVENT_BT_CAL,
+    FSM_EVENT_BT_MEAS,
+    FSM_EVENT_BT_MANUAL_ON,
+    FSM_EVENT_BT_MANUAL_OFF,
+    FSM_EVENT_CAL_DONE,
+    FSM_EVENT_MEAS_DONE,
+    FSM_EVENT_ERROR_FLAG
+} FSM_Event_t;
+```
+
 #### 6.4.2 Event-Quellen (Button, BT-Manager)
+
+| Source | Mechanism |
+|--------|-----------|
+| **Button** | `process_button()` runs each `FSM_RunOnce()` cycle; detects rising edge on `BSP_Button_GetState()` → enqueues `FSM_EVENT_BUTTON_PRESS`. |
+| **BT Manager** | `BT_PopEvent()` drained each cycle; `BT_EVENT_CONN/CAL/MEAS` mapped to `FSM_EVENT_BT_*` and enqueued. `BT_EVENT_MANUAL_ON/OFF` handled directly (immediate transition). |
+| **Internal** | `FSM_EVENT_INIT_DONE`, `CAL_DONE`, `MEAS_DONE` generated by state handlers after completing their work. |
 
 #### 6.4.3 Event-Verarbeitung und Priorisierung
 
+Circular buffer with depth **8** (`FSM_EVENT_QUEUE_SIZE`). On overflow the oldest event is dropped and `"QUEUE overflow"` is logged. `FSM_EVENT_NONE` is silently discarded. Events are processed FIFO — no priority levels. `BT_MANUAL_ON/OFF` bypass the queue and take effect immediately.
+
 ### 6.5 Zustandsübergänge
 
+| Current State | Event | Next State | Response |
+|---------------|-------|------------|----------|
+| INIT | `INIT_DONE` | IDLE | — |
+| IDLE | `BUTTON_PRESS` (no cal) | CALIBRATION | `STAT:CAL_REQ` |
+| IDLE | `BUTTON_PRESS` (cal valid) | MEASURE_SEARCH | `STAT:MEAS_REQ` |
+| IDLE | `BT_CAL` | CALIBRATION | `STAT:CAL_REQ` |
+| IDLE | `BT_MEAS` (cal valid) | MEASURE_SEARCH | `STAT:MEAS_REQ` |
+| IDLE | `BT_MEAS` (no cal) | IDLE | `STAT:ERR` |
+| IDLE | `BT_CONN` | IDLE | `STAT:RDY` |
+| CALIBRATION | `CAL_DONE` (valid) | IDLE | `STAT:CAL_OK` |
+| CALIBRATION | `CAL_DONE` (invalid) | ERROR | `STAT:ERR` |
+| CALIBRATION | `BT_CONN` | CALIBRATION | `STAT:CAL` |
+| MEASURE_SEARCH | `MEAS_DONE` (valid) | CALCULATION | `DAT:RES:…` |
+| MEASURE_SEARCH | `MEAS_DONE` (invalid) | ERROR | `STAT:ERR:MEAS_INVALID` |
+| MEASURE_SEARCH | `BT_CONN` | MEASURE_SEARCH | `STAT:MEAS` |
+| CALCULATION | `BUTTON_PRESS` | IDLE | — |
+| CALCULATION | `BT_CAL` | CALIBRATION | `STAT:CAL_REQ` |
+| CALCULATION | `BT_MEAS` | CALCULATION | `STAT:ERR:NEED_CAL` |
+| CALCULATION | `BT_CONN` | CALCULATION | `STAT:RDY` |
+| ERROR | `BUTTON_PRESS` | INIT | — |
+| ERROR | `BT_CONN` | INIT | `STAT:RDY` |
+| ERROR | `BT_CAL` / `BT_MEAS` | ERROR | `STAT:ERR` |
+| *any* | `BT_MANUAL_ON` | MANUAL_OPERATION | `STAT:MANUAL_ON` |
+| MANUAL_OPERATION | `BT_MANUAL_OFF` | IDLE | `STAT:MANUAL_OFF` |
+| MANUAL_OPERATION | `BT_CAL` / `BT_MEAS` | MANUAL_OPERATION | `STAT:MANUAL_ACTIVE` |
+| MANUAL_OPERATION | `BT_CONN` | MANUAL_OPERATION | `STAT:MANUAL` |
+
 ### 6.6 Fehlerbehandlung und Recovery
+
+| Scenario | Detection | Action |
+|----------|-----------|--------|
+| Calibration failure | `RF_PerformAirCalibration()` returns `is_valid = 0` | → ERROR, `STAT:ERR` |
+| Invalid measurement | `FSM_IsMeasurementValid()`: non-finite voltage or exceeds threshold | → ERROR, `STAT:ERR:MEAS_INVALID` |
+| Measurement without cal | `BT_MEAS` while `!s_calibration.is_valid` | Rejected, `STAT:ERR` (stays in IDLE) |
+| Post-result recalibration | Entry to CALCULATION invalidates `s_calibration` | Forces recalibration before next measurement |
+| Event queue overflow | 9th event into full queue | Oldest dropped, `"QUEUE overflow"` logged |
+| Manual mode safety | Entry to MANUAL_OPERATION from any state | Excitation + op-amp disabled immediately |
+| Error recovery | Button press or `BT_CONN` in ERROR state | Full reinitialisation via → INIT |
 
 ---
 
