@@ -231,33 +231,91 @@ Currently there is **no runtime switch** between mock and real hardware. `bsp_rf
 
 ### 5.1 Überblick und Zweck
 
+The BSP layer sits between the application logic (FSM, measurement) and the lower-level drivers (HAL / mock). It provides hardware-agnostic interfaces so upper layers never call HAL or mock functions directly. Currently all three BSP modules delegate to the mock board; the transition to real HAL drivers only requires changes inside the BSP — no application code needs to be modified.
+
 ### 5.2 BSP RF (`bsp_rf.c` / `bsp_rf.h`)
 
 #### 5.2.1 Zweck (Abstraktion des RF-Frontends)
 
-#### 5.2.2 Bereitgestellte Funktionen (`BSP_RF_Init`, `BSP_RF_SetFreqVoltage`, `BSP_RF_SetQVoltage`, `BSP_RF_ReadAmplitude`)
+Abstracts the entire RF signal chain: DAC varicap control, gain selection, excitation enable, op-amp enable, and amplitude readback. Upper layers (`rf_measure.c`) call BSP RF functions without knowing whether a mock or real hardware is behind them.
+
+#### 5.2.2 Bereitgestellte Funktionen
+
+| Function | Description |
+|----------|-------------|
+| `BSP_RF_Init(void)` | Initialises internal state and calls `MockBoard_Init()`. |
+| `BSP_RF_SetFreqVaricap(float voltage_v)` | Stores frequency-tuning voltage (DAC CH1). |
+| `BSP_RF_SetQVaricap(float voltage_v)` | Stores Q-factor-tuning voltage (DAC CH2). |
+| `BSP_RF_SetGain(uint8_t gain_idx)` | Sets RF gain (masked to 2 bits → 0–3). |
+| `BSP_RF_SetOpAmpEnable(uint8_t enable)` | Enables/disables the external op-amp buffer. |
+| `BSP_RF_EnableExcitation(uint8_t enable)` | Enables/disables 20 MHz PWM excitation. |
+| `BSP_RF_ReadAmplitude(void)` | Returns amplitude from `MockBoard_RF_ComputeAmplitude()` using stored voltages and gain. |
+
+Mock-configuration wrappers (forwarded to `MockBoard_RF_*`):
+
+| Function | Effect |
+|----------|--------|
+| `BSP_RF_MockSetResonanceVoltage(float v)` | Set mock resonance centre |
+| `BSP_RF_MockSetNoiseLevel(float v)` | Set mock noise |
+| `BSP_RF_MockSetBaseAmplitude(float v)` | Set mock base amplitude |
+| `BSP_RF_MockSetForceFailure(uint8_t en)` | Enable/disable NAN failure mode |
+
+Internal state: `s_freq_voltage`, `s_q_voltage`, `s_gain_idx`, `s_opamp_enabled`, `s_excitation_enabled`. All voltage/gain changes are logged via `Debug_LogDriver()`.
 
 #### 5.2.3 Switch-Point: Mock vs. reale Hardware
 
+`BSP_RF_ReadAmplitude()` currently calls `MockBoard_RF_ComputeAmplitude(s_freq_voltage, s_q_voltage, s_gain_idx)`. To switch to real hardware, this single call must be replaced with a sequence of `HL_DAC_SetVoltage()` → settle delay → `HL_ADC_Read()`. The setter functions (`SetFreqVaricap`, `SetQVaricap`, `SetGain`) will additionally need to forward values to the HAL drivers.
+
 #### 5.2.4 Geplante Erweiterungen (DMA Buffer Capture)
+
+A future `BSP_RF_CaptureBuffer(float *buf, size_t len)` will use DMA to capture a block of ADC samples for frequency-domain processing (undersampling + DFT/Goertzel in `math_model.c`).
 
 ### 5.3 BSP UI (`bsp_ui.c` / `bsp_ui.h`)
 
 #### 5.3.1 Zweck (Button- und LED-Verwaltung)
 
+Provides a unified interface for the user button (PC13) and the four status LEDs. All calls delegate to the mock board.
+
 #### 5.3.2 Bereitgestellte Funktionen
+
+| Function | Description |
+|----------|-------------|
+| `BSP_UI_Init(void)` | Initialises UI state, calls `MockBoard_Init()`. |
+| `BSP_LED_Set(uint8_t led_id, uint8_t state)` | Set LED on (1) or off (0). |
+| `BSP_LED_Get(uint8_t led_id)` | Read current LED state. |
+| `BSP_Button_SetState(uint8_t pressed)` | Inject button state (used by command simulation). |
+| `BSP_Button_GetState(void)` | Read current button state. |
+
+LED identifiers (enum): `LED_STATUS` (0), `LED_MEAS` (1), `LED_EXCITE` (2), `LED_ERROR` (3), `LED_COUNT` (4).
 
 #### 5.3.3 Button-Logik und Entprellung
 
+No debouncing is implemented at BSP level. `BSP_Button_SetState()` stores the raw value via `MockBoard_UI_SetButton()`. Debounce logic, if needed, is the responsibility of the FSM or a future interrupt-driven GPIO handler.
+
 #### 5.3.4 LED-Zustandsverwaltung
+
+LED state is held inside the mock board's internal array (indexed by `led_id`). `BSP_LED_Set()` normalises the state to 0/1 before storing. The FSM sets LEDs according to the current application state (e.g., `LED_ERROR` on in `STATE_ERROR`).
 
 ### 5.4 BSP LCD (`bsp_lcd.c` / `bsp_lcd.h`)
 
 #### 5.4.1 Zweck (LCD-Pufferverwaltung)
 
+Manages a 2-line × 16-character in-memory buffer that mirrors the physical I2C LCD content. Upper layers write to this buffer; a future driver will flush it to the display.
+
 #### 5.4.2 Bereitgestellte Funktionen
 
+| Function | Description |
+|----------|-------------|
+| `BSP_LCD_Init(void)` | Clears the buffer (fills with spaces). |
+| `BSP_LCD_Clear(void)` | Resets both lines to spaces. |
+| `BSP_LCD_DisplayStringAt(uint8_t line, const char *str)` | Writes `str` into the line buffer. Short strings are space-padded; long strings are truncated to 16 chars. |
+| `BSP_LCD_GetLine(uint8_t line, char *buffer, uint8_t max_len)` | Copies the line content into a user-provided buffer with bounds checking. |
+
+Constants: `LCD_LINE_COUNT = 2`, `LCD_CHAR_COUNT = 16`.
+
 #### 5.4.3 I2C-Anbindung und Zeilenpuffer
+
+The current implementation is **buffer-only** — no I2C transactions are performed. The internal buffer `s_lcd_lines[2][17]` holds null-terminated strings. When real hardware is connected, `BSP_LCD_DisplayStringAt()` will additionally push the buffer content to the I2C LCD controller (PB8/PB9). The `CMD:LCD` and `CMD:HAL:LCD:SET` commands read from / write to this buffer via `BSP_LCD_GetLine()` / `BSP_LCD_DisplayStringAt()`.
 
 ---
 
