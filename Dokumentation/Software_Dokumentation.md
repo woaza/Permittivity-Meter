@@ -135,27 +135,95 @@ Todo replace with image from Präsentation
 
 ### 4.1 Zweck und Einsatzbereich
 
+The mock board provides a software-only simulation of the RF frontend, UI elements (LEDs, button), BT command queue, and debug log buffer. It allows the complete firmware — FSM, measurement algorithms, protocol parser — to run and be tested without any physical hardware attached.
+
+Primary use cases:
+
+- **Development**: Iterate on sweep algorithms and FSM logic on a bare Nucleo board (no RF circuit needed).
+- **Automated testing**: PC-side test scripts (`tools/`) can run calibration and measurement cycles against deterministic simulated responses.
+- **Failure injection**: Force `NAN` returns to verify error-handling paths.
+
 ### 4.2 RF-Antwort-Modell (Parabolisches Dip-Modell)
+
+The mock simulates a resonance circuit whose amplitude shows a parabolic dip (minimum) at the resonance voltage. The measurement algorithms search for this minimum during coarse and fine sweeps.
 
 #### 4.2.1 Mathematische Formel
 
+```
+amplitude = base_amplitude + curvature × δ² − (q_voltage × 0.02) + noise
+```
+
+where:
+
+- `δ = freq_voltage − resonance_voltage` — distance from resonance centre
+- `curvature = 0.3 + (gain_idx × 0.05)` — parabola sharpness, influenced by gain setting
+- `noise` — random component scaled by the configured noise level
+
+When force-failure is enabled, the function returns `NAN` regardless of input.
+
 #### 4.2.2 Konfigurierbare Parameter (Resonanz, Rauschen, Basis, Krümmung)
+
+| Parameter | Default | Set via | Description |
+|-----------|---------|---------|-------------|
+| Resonance voltage | 1.2 V | `MockBoard_RF_SetResonanceVoltage()` | DAC voltage at which the amplitude dip occurs |
+| Base amplitude | 1.0 V | `MockBoard_RF_SetBaseAmplitude()` | Amplitude value at the resonance minimum |
+| Noise level | 0.01 V | `MockBoard_RF_SetNoise()` | Peak random perturbation added to the output |
+| Curvature | 0.3 + gain × 0.05 | gain index (0–3) | Controls how steeply amplitude rises away from resonance |
+| Force failure | off | `MockBoard_RF_SetForceFailure()` | When enabled, all reads return `NAN` |
 
 ### 4.3 Bereitgestellte Funktionen
 
-#### 4.3.1 `MockBoard_Init`
+#### 4.3.1 `MockBoard_Init` / `MockBoard_Reset`
 
-#### 4.3.2 `MockBoard_SetDAC`
+`MockBoard_Init()` and `MockBoard_Reset()` set all internal state to defaults: resonance = 1.2 V, base = 1.0 V, noise = 0.01 V, force-failure off, LED/button states cleared, BT queue and debug log emptied.
 
-#### 4.3.3 `MockBoard_ReadAmplitude`
+#### 4.3.2 `MockBoard_RF_ComputeAmplitude`
 
-#### 4.3.4 `MockBoard_SetResonance` / `MockBoard_SetNoise` / `MockBoard_SetBase` / `MockBoard_SetFail`
+```c
+float MockBoard_RF_ComputeAmplitude(float freq_voltage,
+                                     float q_voltage,
+                                     uint8_t gain_idx);
+```
+
+Core function called by `BSP_RF_ReadAmplitude()`. Evaluates the parabolic model for the given DAC voltages and gain index. Returns `NAN` if force-failure is active.
+
+#### 4.3.3 `MockBoard_RF_SetResonanceVoltage` / `SetNoise` / `SetBaseAmplitude` / `SetForceFailure`
+
+Configuration setters that modify the simulated RF behaviour at runtime. Typically invoked via `CMD:MOCK:RF:*` commands (see 4.4).
+
+#### 4.3.4 UI, BT Queue, and Debug Helpers
+
+| Group | Functions | Purpose |
+|-------|-----------|---------|
+| **UI** | `MockBoard_UI_SetLED`, `GetLED`, `SetButton`, `GetButton` | Simulate LED and button state |
+| **BT Queue** | `MockBoard_BT_QueueCommand`, `DequeueCommand` | 4-deep FIFO for incoming command simulation |
+| **BT History** | `MockBoard_BT_SetLastTx`, `GetLastTx`, `GetHistoryEntry`, `ClearHistory` | 16-deep ring buffer recording transmitted frames |
+| **Debug Log** | `MockBoard_DebugPush`, `DebugCopy`, `DebugGetLast`, `DebugPeek`, `DebugClear` | 32-deep circular buffer for internal debug entries |
 
 ### 4.4 CMD:MOCK:\*-Befehle
 
+These commands are parsed by `bt_manager.c` → `handle_mock_command()` and forwarded to `bsp_rf.c` wrapper functions.
+
+| Command | Response | Effect |
+|---------|----------|--------|
+| `CMD:MOCK:RF:RES:<float>` | `STAT:MOCK_RF_RES` | Set resonance voltage |
+| `CMD:MOCK:RF:NOISE:<float>` | `STAT:MOCK_RF_NOISE` | Set noise level |
+| `CMD:MOCK:RF:BASE:<float>` | `STAT:MOCK_RF_BASE` | Set base amplitude |
+| `CMD:MOCK:RF:FAIL:ON` | `STAT:MOCK_RF_FAIL_ON` | Force all reads to return `NAN` |
+| `CMD:MOCK:RF:FAIL:OFF` | `STAT:MOCK_RF_FAIL_OFF` | Resume normal operation |
+
+Invalid or unparseable mock commands return `STAT:MOCK_ERR`.
+
 ### 4.5 Umschaltung Mock ↔ reale Hardware
 
+Currently there is **no runtime switch** between mock and real hardware. `bsp_rf.c` always delegates RF reads to `MockBoard_RF_ComputeAmplitude()`. To transition to real hardware, the BSP functions (`BSP_RF_SetFreqVaricap`, `BSP_RF_ReadAmplitude`, etc.) must be updated to call the HAL drivers (`HL_DAC_SetVoltage`, `HL_ADC_Read`, etc.) instead of — or in addition to — the mock. This transition is tracked as a high-priority TODO (see Chapter 17).
+
 ### 4.6 Einschränkungen und bekannte Limitierungen
+
+- **No Q-factor modelling**: The Q-factor voltage only adds a small linear offset (`−0.02 × q_voltage`); a realistic Q-dependent bandwidth change is not simulated.
+- **Static curvature**: The parabola shape is fixed per gain index; real hardware exhibits non-linear and asymmetric resonance curves.
+- **No frequency-domain simulation**: The mock returns a scalar amplitude — it does not produce a time-domain waveform for undersampling / DFT processing.
+- **Deterministic noise**: Uses `rand()` seeded at init; results are reproducible but not representative of real RF noise characteristics.
 
 ---
 
