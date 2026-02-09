@@ -1036,23 +1036,122 @@ Fault handlers (`HardFault`, `MemManage`, `BusFault`, `UsageFault`) turn on `LED
 
 ### 13.1 Überblick der Teststrategie
 
+Testing is split into three levels:
+
+| Level | Where | Hardware needed | Runner |
+|-------|-------|-----------------|--------|
+| **C unit tests** | `tests/test_main.c` | No (PC, mock board) | CMake + CTest |
+| **On-target HW tests** | `Core/Src/test/test_hal_dac.c` | Yes (STM32 + scope) | Firmware entry point |
+| **Python integration tests** | `tools/tests/` | Optional (`--port`) | pytest |
+
+All three levels use the mock board (Ch. 4) as the simulation backend. No CI pipeline is configured — tests are run manually.
+
 ### 13.2 Unit-Tests
 
 #### 13.2.1 Test HAL DAC (`test_hal_dac.c`)
 
+On-target hardware test compiled into the firmware. Validates DAC startup, voltage sweeps (0 → 1.65 → 3.3 V), raw value writes (0 / 2048 / 4095), and a triangle waveform for oscilloscope verification.
+
+```c
+DAC_StatusTypeDef Test_HL_DAC_RunAll(DAC_HandleTypeDef *hdac);
+void Test_HL_DAC_GenerateWaveform(DAC_HandleTypeDef *hdac, IWDG_HandleTypeDef *hiwdg);
+```
+
 #### 13.2.2 Weitere Unit-Tests
 
+`tests/test_main.c` — desktop C tests built with CMake (`-DUNIT_TESTS=1`). Links the core firmware modules (FSM, BT manager, BSP, RF measure, math model) against the mock board and runs on the PC without hardware.
+
+Seven test cases:
+
+| Test | Verifies |
+|------|----------|
+| `test_init_reaches_idle` | FSM boots to `STATE_IDLE` |
+| `test_meas_rejected_without_cal` | `CMD:MEAS` without calibration → `STAT:ERR` |
+| `test_button_triggers_calibration` | Physical button → CALIBRATION state |
+| `test_measurement_flow` | Full CAL → MEAS → `DAT:RES` sequence |
+| `test_conn_status_leds_lcd` | `CMD:CONN` → `STAT:RDY`, correct LEDs and LCD |
+| `test_calibration_status_ready_screen` | After CAL: LCD shows `"Ready"` |
+| `test_measurement_status_result` | MEAS emits `STAT:MEAS` + `DAT:RES` with parsed values |
+
+Build and run:
+
+```bash
+cd tests && cmake -B build && cmake --build build && ctest --output-on-failure
+```
+
 ### 13.3 Integrationstests
+
+Python-based tests in `tools/tests/`, executed via pytest.
+
+**Offline regression** (`test_serial_lifecycle.py`): Loads a captured UART transcript (`tools/testdata/serial_lifecycle_idle.log`) and validates the protocol sequence — handshake order, LED snapshots, LCD content, trace index monotonicity, and UART error recovery — without any hardware.
+
+**Live hardware** (`test_hw_command_surface.py`, marker `@pytest.mark.hardware`): Connects to the device via `--port COMx` and exercises the full command surface:
+
+| Test | Scope |
+|------|-------|
+| `test_normal_operation_happy` | CONN → CAL → MEAS → `DAT:RES` with LED/LCD checks |
+| `test_normal_operation_fail_path` | `CMD:MOCK:RF:FAIL:ON` → MEAS → `STAT:ERR` |
+| `test_manual_mode_hal_read_write` | MANUAL ON → HAL LED/DAC/ADC/PWM/Gain/Button round-trips |
+| `test_pc_cli_script_exercises_all_commands` | Replays `testdata/all_commands_hw.txt` |
+
+Configuration via `conftest.py` fixtures: `hw_cfg` (port, baud, timeouts) and `serial_client` (auto-resets MCU before each test). Configurable through CLI args or environment variables (`PERMITTIVITY_METER_PORT`, etc.).
+
+```bash
+pytest tools/tests/ --port COM6 -m hardware -v      # live
+pytest tools/tests/test_serial_lifecycle.py -v        # offline
+```
 
 ### 13.4 PC-basierte Lifecycle-Tests (`tools/`)
 
 #### 13.4.1 PC CLI (`pc_cli.py`)
 
+Interactive and scripted serial terminal. Wraps a `SerialClient` class (threaded RX, line-based TX) with named commands (`conn`, `cal`, `meas`, `leds`, `lcd`, `hal-*`, `send <raw>`, `reset`). Supports `--script <file>` for automated command sequences with `wait <sec>` between steps.
+
+```bash
+python tools/pc_cli.py --port COM7                    # interactive
+python tools/pc_cli.py --port COM7 --script cmds.txt  # scripted
+```
+
 #### 13.4.2 Lifecycle Test Script
+
+`tools/run_hw_lifecycle.py` — standalone smoke test. Runs a boot → CONN → CAL → MEAS cycle and validates the `DAT:RES` response. Supports `--scenario fail` (enables mock RF failure, expects `STAT:ERR`) and `--probe-debug` (dumps LOG + TRACE during calibration).
+
+```bash
+python tools/run_hw_lifecycle.py --port COM7
+python tools/run_hw_lifecycle.py --port COM7 --scenario fail
+```
 
 #### 13.4.3 PySimpleGUI Desktop-Tool
 
+`tools/pc_ui.py` — graphical debug panel with LED indicators, LCD mirror, DAC/ADC sliders, PWM controls, button simulation, gain selection, NINA module control, manual-mode toggle, and RF mock parameter injection. Updates from `STAT:HW:*` push frames.
+
+```bash
+python tools/pc_ui.py --port COM4
+```
+
 ### 13.5 Mock-basiertes Testen
+
+The mock board (Ch. 4) is the enabler for all non-hardware tests. It provides:
+
+| Capability | Used by |
+|------------|---------|
+| `MockBoard_RF_ComputeAmplitude` — deterministic RF response | C unit tests, lifecycle scripts |
+| `MockBoard_RF_SetForceFailure` — inject `NAN` returns | Error-path tests (pytest `fail` scenario) |
+| `MockBoard_BT_QueueCommand` / `GetLastTx` / `GetHistoryEntry` — command injection and TX capture | C unit tests (assertion on protocol output) |
+| `MockBoard_UI_SetLED` / `GetLED` / `SetButton` — LED and button state | C unit tests (FSM LED/button assertions) |
+| `CMD:MOCK:RF:*` over UART — runtime mock tuning | Live hardware tests, lifecycle scripts |
+
+Test coverage summary:
+
+| Component | C unit | On-target | pytest HW | pytest offline |
+|-----------|--------|-----------|-----------|----------------|
+| FSM transitions | ✓ | — | ✓ | ✓ |
+| Protocol (CMD/STAT/DAT) | ✓ | — | ✓ | ✓ |
+| LED / LCD UI | ✓ | — | ✓ | ✓ |
+| RF measurement | ✓ | — | ✓ | — |
+| DAC hardware | — | ✓ | ✓ | — |
+| Error handling | ✓ | — | ✓ | ✓ |
+| Manual / HAL mode | — | — | ✓ | — |
 
 ---
 
