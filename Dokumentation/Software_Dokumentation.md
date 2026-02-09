@@ -947,13 +947,88 @@ The planned approach mirrors the USB path: a second `HostBridge` instance for UA
 
 ### 12.1 Boot-Sequenz
 
+Initialisation runs top-to-bottom before entering the infinite loop:
+
+| # | Call | Purpose |
+|---|------|---------|
+| 1 | `HAL_Init()` | Flash interface, SysTick (1 ms tick). |
+| 2 | `SystemClock_Config()` | HSE + PLL → 64 MHz; falls back to MSI 4 MHz if HSE fails. |
+| 3 | `MX_GPIO_Init()` | Configure all GPIO pins (LEDs, button, gain select, NINA control). |
+| 4 | `MX_DMA_Init()` | Enable DMA1 channels for ADC, DAC (×2), USART2 RX/TX. |
+| 5 | `MX_ADC1_Init()` | ADC1 CH1 (PC0), 12-bit, continuous + DMA. |
+| 6 | `MX_UART4_Init()` | UART4 115200 8N1, HW flow control (NINA BT module). |
+| 7 | `MX_DAC1_Init()` | DAC1 Ch1 (PA4 freq tuning) + Ch2 (PA5 Q-factor tuning). |
+| 8 | `MX_IWDG_Init()` | Independent watchdog, ~33 s timeout (prescaler 256, reload 4095). |
+| 9 | `MX_TIM1_Init()` | TIM1 CH2 (PA9) — PWM carrier for 20 MHz excitation. |
+| 10 | `MX_USART2_UART_Init()` | USART2 115200 8N1, no flow control (ST-LINK VCP). |
+| 11 | `MX_TIM6_Init()` | TIM6 — ADC trigger timer for DMA sampling. |
+| 12 | `HL_DAC_Init / Start` | Start both DAC channels via HAL driver wrapper. |
+| 13 | `HL_ADC_Init / Start` | Start ADC + DMA circular buffer. |
+| 14 | `HAL_PWM_Init` | Configure PWM to 20 MHz / 50 % duty (output **not** started — FSM controls). |
+| 15 | LED indicator | `LED_INIT` on; `LED_ERR` on if clock fallback is active. |
+| 16 | `FSM_Init()` | Initialise state machine → enters `STATE_INIT`. |
+
+After step 16 the firmware enters the main loop.
+
 ### 12.2 Systemtakt-Konfiguration (HSE / MSI Fallback)
+
+| Parameter | Normal | Fallback |
+|-----------|--------|----------|
+| Source | HSE 8 MHz + PLL | MSI 4 MHz |
+| SYSCLK | 64 MHz | 4 MHz |
+| Flash latency | 4 WS | 0 WS |
+| PLL M / N / R | 2 / 16 / 2 | — (PLL off) |
+| `g_clock_fallback_active` | 0 | 1 |
+
+**Fallback logic**: if `HAL_RCC_OscConfig()` fails with HSE, the function retries with MSI at range 6 (4 MHz), sets `g_clock_fallback_active = 1`, and disables the PLL. This flag is checked later by `PC_HostBridge_Init()` to select polling RX instead of DMA.
+
+**Clock Security System (CSS)**: enabled on the normal path via `HAL_RCC_EnableCSS()`. If HSE is lost at runtime, an NMI fires and the handler sets `g_clock_fallback_active = 1` and turns on `LED_ERR` — the device keeps running on the internal oscillator.
 
 ### 12.3 Peripherie-Initialisierung
 
+Key peripheral parameters:
+
+| Peripheral | Config | Notes |
+|------------|--------|-------|
+| **ADC1** | 12-bit, continuous, DMA circular, CH1 (PC0), 47.5-cycle sample time | Reads `NOTCH_AMP_IN` |
+| **DAC1** | 2 channels, software trigger, output buffer enabled | CH1 = PA4 (freq), CH2 = PA5 (Q) |
+| **USART2** | 115200 8N1, DMA RX/TX | ST-LINK VCP (PA2 TX / PA15 RX) |
+| **UART4** | 115200 8N1, HW RTS/CTS | NINA BT (PA1 TX / PC10 RX) |
+| **TIM1** | PWM mode 1, CH2 (PA9), fast mode | 20 MHz excitation output |
+| **TIM6** | Up counter, internal trigger | ADC DMA trigger |
+| **IWDG** | Prescaler 256, reload 4095 | ~33 s watchdog timeout |
+| **DMA1** | 5 channels: ADC, DAC×2, USART2 RX/TX | All priority 0 |
+| **GPIO** | 4 LED outputs, 1 button input (EXTI falling), 2 gain-select, NINA control, MCO on PA8 | — |
+
 ### 12.4 Hauptschleife (Event-Loop)
 
+```c
+while (1) {
+    HAL_IWDG_Refresh(&hiwdg);   // feed watchdog
+    FSM_RunOnce();               // one FSM iteration
+}
+```
+
+The loop is purely polling-based with no sleep modes. Each `FSM_RunOnce()` call (see Ch. 6) polls the button, drains BT events, processes the event queue, and runs the current state handler. UART RX processing happens inside `FSM_RunOnce()` via `PC_HostBridge_Poll()`.
+
+The watchdog timeout (~33 s) is generous enough to tolerate a full coarse + fine sweep without resetting.
+
 ### 12.5 Reset-Ursachen-Erkennung
+
+On boot the firmware reads `RCC->CSR` reset flags, formats a human-readable cause string, and sends it as `STAT:RESET_CAUSE:<flags>`. Recognised flags:
+
+| Flag | Meaning |
+|------|---------|
+| `IWDG` | Independent watchdog reset |
+| `WWDG` | Window watchdog reset |
+| `SW` | Software reset (`NVIC_SystemReset()`) |
+| `PIN` | External reset pin (NRST) |
+| `BOR` | Brown-out reset |
+| `LPWR` | Low-power reset |
+
+After reading, the flags are cleared via `__HAL_RCC_CLEAR_RESET_FLAGS()`. The reset cause is emitted before `STAT:BOOT_V2` during the boot output sequence.
+
+Fault handlers (`HardFault`, `MemManage`, `BusFault`, `UsageFault`) turn on `LED_ERR` and call `NVIC_SystemReset()` so the device recovers automatically. A panic print function (`uart2_panic_print`) outputs `STAT:ERR:<msg>` directly on USART2 before the reset.
 
 ---
 
