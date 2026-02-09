@@ -11,19 +11,18 @@
 ### 1.4 Referenzen und verwandte Dokumente
 
 ### 1.5 Abkürzungen und Begriffe
-
 ---
 
 ## 2. Systemübersicht
 
 ### 2.1 Projektbeschreibung
 
-The Permittivity Meter is an embedded device that measures the dielectric properties (permittivity, density) of materials — primarily snow — using an RF resonance circuit. A 20 MHz excitation signal drives a resonator whose resonance frequency shifts depending on the material under test. The firmware sweeps a DAC-controlled varicap voltage range, detects the resonance dip, and calculates the permittivity from the frequency shift between an air calibration and the material measurement.
+The Permittivity Meter is an embedded device that measures the dielectric properties (permittivity, density) of snow — using an RF resonance circuit. A 20 MHz excitation signal drives a resonator whose resonance frequency shifts depending on the snow under test. The firmware sweeps a DAC-controlled varicap voltage range, detects the resonance dip, and calculates the permittivity from the frequency shift between an air calibration and the snow measurement.
 
-The system is controlled via an ASCII command protocol (`CMD:*` / `STAT:*` / `DAT:*`) over USB (USART2). A Bluetooth interface (UART4 / NINA module) is planned. A built-in mock layer allows full-cycle testing without RF hardware.
+The system is controlled via an ASCII command protocol (`CMD:*` / `STAT:*` / `DAT:*`) over USB (USART2). A Bluetooth interface (UART4 / NINA module) is planned to inegrate a smarthpone app. The device can be used standalone via hardware buttons. A built-in mock layer allows full-cycle testing without RF hardware.
 
 ### 2.2 Architekturübersicht (Layer-Diagramm)
-
+Todo replace with image from Präsentation
 ```
 ┌──────────────────────────────────────────────────────┐
 │  PC / Host                                           │
