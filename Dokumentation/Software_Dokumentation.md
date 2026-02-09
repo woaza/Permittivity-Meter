@@ -497,31 +497,132 @@ Circular buffer with depth **8** (`FSM_EVENT_QUEUE_SIZE`). On overflow the oldes
 
 ### 7.1 Überblick und Verantwortlichkeit
 
+Implements the two core measurement routines — air calibration and snow measurement — using a coarse-then-fine sweep strategy with parabolic interpolation. The module calls BSP RF functions exclusively and has no direct hardware dependency.
+
+Public API:
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `RF_PerformAirCalibration(void)` | `CalibrationData_t` | Full-range sweep to find air resonance. |
+| `RF_PerformSnowMeasurement(CalibrationData_t calib)` | `MeasurementResult_t` | Narrowed sweep around calibration point to detect permittivity shift. |
+
+Data structures:
+
+```c
+typedef struct {
+    float   air_dac_freq_voltage;   // DAC voltage at air resonance
+    float   air_adc_min;            // ADC amplitude at that minimum
+    uint32_t timestamp;             // reserved (currently 0)
+    uint8_t is_valid;               // 1 = usable, 0 = failed
+} CalibrationData_t;
+
+typedef struct {
+    float   epsilon_real;           // ε'
+    float   epsilon_imag;           // ε''
+    float   snow_density;           // kg/m³ (linear estimate)
+    float   temperature;            // reserved for thermal compensation
+    float   dac_freq_voltage;       // resonance voltage in snow
+    float   dac_q_voltage;          // Q-trim voltage used
+    float   adc_voltage_min;        // minimum amplitude detected
+    float   frequency_shift;        // dac_freq_voltage − air_dac_freq_voltage
+    uint8_t gain_index;             // 0–3
+} MeasurementResult_t;
+```
+
 ### 7.2 Kalibrierung (Air Calibration)
 
 #### 7.2.1 Ablauf (`RF_PerformAirCalibration`)
 
+1. Begin trace (`RF_TRACE_MODE_CALIBRATION`), enable excitation and set default gain.
+2. **Coarse sweep** → find approximate resonance voltage.
+3. **Fine sweep** → narrow ±0.025 V around coarse result.
+4. **Parabolic interpolation** → refine to sub-step precision.
+5. Validate amplitude (`isfinite()`). On success: fill `CalibrationData_t` with refined vertex and amplitude, set `is_valid = 1`. On failure: fall back to coarse result, `is_valid = 0`.
+6. Disable excitation, end trace, return result.
+
 #### 7.2.2 Coarse Sweep
+
+`coarse_sweep(float *best_voltage, float *best_amplitude)` — static.
+
+Scans the full DAC range **0.0 – 2.5 V** in **0.05 V** steps (≈ 51 samples). At each step `sample_at()` is called. Non-finite amplitudes are skipped. The voltage producing the **lowest** (minimum) amplitude is recorded. Returns `true` if at least one finite sample was found.
 
 #### 7.2.3 Fine Sweep
 
+`fine_sweep(float coarse_best_v, float *best_voltage, float *best_amplitude)` — static.
+
+Searches a ±0.025 V window (`FINE_WINDOW_STEPS × FINE_STEP_V = 5 × 0.005`) around the coarse result in **0.005 V** steps (≈ 11 samples). Start/end clamped to [0.0, 2.5] V. Again finds the minimum amplitude.
+
 #### 7.2.4 Parabolische Interpolation
 
+`refine_vertex(float center)` — static.
+
+Samples three points at `center − 0.005`, `center`, `center + 0.005` and fits a parabola through them:
+
+```
+vertex_x = numerator / (2 × denominator)
+```
+
+where numerator and denominator are derived from the standard three-point quadratic vertex formula. Falls back to `center` if the denominator is zero, any value is non-finite, or the computed vertex lies outside [0.0, 2.5] V.
+
 #### 7.2.5 Ergebnis und Speicherung
+
+On success the returned `CalibrationData_t` contains the parabola-refined resonance voltage (`air_dac_freq_voltage`), the corresponding minimum amplitude (`air_adc_min`), and `is_valid = 1`. The FSM stores this struct and gates subsequent measurement requests on `is_valid`.
 
 ### 7.3 Messung (Snow Measurement)
 
 #### 7.3.1 Ablauf (`RF_PerformSnowMeasurement`)
 
+1. Validate calibration (`is_valid`). If invalid: return ε′ = 1.0, ε″ = 0.0 immediately.
+2. Begin trace (`RF_TRACE_MODE_MEASUREMENT`), enable excitation.
+3. Sweep ±0.2 V around `calib.air_dac_freq_voltage` in **0.005 V** steps (≈ 81 samples).
+4. **Parabolic interpolation** on the minimum found.
+5. Compute results: `frequency_shift`, `epsilon_real`, `epsilon_imag` (via `Math_CalculateEpsilon()`), `snow_density` (linear model: `0.3 + shift × 0.1`).
+6. Disable excitation, end trace, return `MeasurementResult_t`.
+
 #### 7.3.2 Suchbereich relativ zur Kalibrierung
+
+The search window is **±0.2 V** (fixed) centred on the air calibration voltage. This is significantly narrower than the full 0–2.5 V coarse sweep, reducing measurement time while covering the expected permittivity-induced shift range.
 
 #### 7.3.3 Ergebnisberechnung
 
+- `frequency_shift = vertex − calib.air_dac_freq_voltage`
+- `epsilon_real`, `epsilon_imag` filled by `Math_CalculateEpsilon()` (see Chapter 9).
+- `snow_density = 0.3 + frequency_shift × 0.1` (placeholder linear model).
+
 ### 7.4 Sampling-Funktion (`sample_at`)
+
+```c
+static float sample_at(float freq_voltage, float q_voltage,
+                        uint8_t gain_idx, float *out_amp);
+```
+
+Sets gain → frequency varicap → Q varicap via BSP, reads amplitude via `BSP_RF_ReadAmplitude()`, logs the point via `RF_Trace_Add()`, and returns the amplitude (also written to `*out_amp` if non-NULL).
 
 ### 7.5 Konfigurierbare Parameter (Sweep-Bereich, Schrittweiten)
 
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `COARSE_START_V` | 0.0 V | Coarse sweep start |
+| `COARSE_END_V` | 2.5 V | Coarse sweep end |
+| `COARSE_STEP_V` | 0.05 V | Coarse step size (≈ 51 samples) |
+| `FINE_STEP_V` | 0.005 V | Fine / measurement step size |
+| `FINE_WINDOW_STEPS` | 5 | Fine window = ±5 × 0.005 = ±0.025 V |
+| `DEFAULT_Q_VOLTAGE` | 1.0 V | Q-trim varicap voltage |
+| `DEFAULT_GAIN_INDEX` | 1 | RF gain setting (0–3) |
+| Measurement window | ±0.2 V | Search range around calibration point |
+
 ### 7.6 Fehlerbehandlung (ungültige Messungen)
+
+| Condition | Handling |
+|-----------|----------|
+| Coarse sweep returns no finite samples | Calibration `is_valid = 0`; logged as `"coarse_fail"` |
+| Fine sweep returns no finite samples | Calibration `is_valid = 0`; logged as `"fine_fail"` |
+| Amplitude not finite after fine sweep | Calibration `is_valid = 0`; logged as `"amp_invalid"` |
+| Parabolic vertex out of range or non-finite | Falls back to centre voltage; logged as `"vertex_fallback"` |
+| Snow measurement called with invalid calibration | Returns ε′ = 1.0, ε″ = 0.0; logged as `"no_cal"` |
+| Snow sweep finds no finite samples | Sets `adc_voltage_min = FLT_MAX`; logged as `"sweep_fail"` |
+
+All events are logged under domains `"RF_CAL"` or `"RF_MEAS"` via `Debug_LogDriver()`.
 
 ---
 
