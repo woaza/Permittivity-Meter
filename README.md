@@ -112,8 +112,6 @@ After that, `CMD:CONN` should respond with exactly one `STAT:RDY`.
 | **PB0** | `GAIN_SLCT_3` | **GPIO Output** | RF Gain Select Bit 1. |
 | **PC4** | `OP_DIS` | **GPIO Output** | Op-Amp Disable. |
 | **PA9** | `SQR_20M_OUT` | **TIM1 CH2** | 20 MHz PWM Excitation Signal. |
-| **PA1** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
-| **PA0** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
 | **PA2** | `VCP_TX` | **USART2 TX** | USB Virtual COM Port TX. |
 | **PA3** | `VCP_RX` | **USART2 RX** | USB Virtual COM Port RX. |
 | **PB6** | `LCD_SCL` | **I2C SCL** | LCD Display Clock. |
