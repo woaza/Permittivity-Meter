@@ -105,22 +105,17 @@ After that, `CMD:CONN` should respond with exactly one `STAT:RDY`.
 | **PC6** | `ERR_LED` | **LED (Red)** | Error State. |
 | **PC10** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
 | **PC11** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
-| **PB7** | `NINA_CTS` | **UART4 CTS** | Bluetooth Flow Control (CTS). |
 | **PA15** | `NINA_RTS` | **UART4 RTS** | Bluetooth Flow Control (RTS). |
 | **PA11** | `NINA_RST` | **GPIO Output** | NINA Reset (Active Low). |
-| **PA12** | `NINA_STOP` | **GPIO Output** | NINA Stop Mode (Active High). |
-| **PB11** | `NINA_DTR` | **GPIO Output** | NINA DTR (Wake-up). |
-| **PB12** | `NINA_DSR` | **GPIO Input** | NINA DSR (Ready Status). |
 | **PC3** | `GAIN_SLCT_1` | **GPIO Output** | RF Gain Select Bit 0. |
 | **PC1** | `GAIN_SLCT_2` | **GPIO Output** | RF Gain Select Bit 1. |
+| **PB0** | `GAIN_SLCT_3` | **GPIO Output** | RF Gain Select Bit 1. |
 | **PC4** | `OP_DIS` | **GPIO Output** | Op-Amp Disable. |
 | **PA9** | `SQR_20M_OUT` | **TIM1 CH2** | 20 MHz PWM Excitation Signal. |
 | **PA1** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
 | **PA0** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
 | **PA2** | `VCP_TX` | **USART2 TX** | USB Virtual COM Port TX. |
 | **PA3** | `VCP_RX` | **USART2 RX** | USB Virtual COM Port RX. |
-| **PC8** | `GAIN_SLCT_1` | **GPIO Out** | RF Gain Select Bit 0. |
-| **PC9** | `GAIN_SLCT_2` | **GPIO Out** | RF Gain Select Bit 1. |
 | **PB6** | `LCD_SCL` | **I2C SCL** | LCD Display Clock. |
 | **PB7** | `LCD_SDA` | **I2C SDA** | LCD Display Data. |
 
