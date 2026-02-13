@@ -93,19 +93,19 @@ After that, `CMD:CONN` should respond with exactly one `STAT:RDY`.
 | :--- | :--- | :--- | :--- |
 | **PC13** | `B1` | **User Button** | Triggers Calibration (1st press) or Measurement (2nd press). |
 | **PA6** | `INIT_LED` | **LED (Green)** | Indicates System Initialization / Idle State. |
-| **PA7** | `MEAS_LED` | **LED (Blue)** | Indicates Measurement/Calibration in progress. |
-| **PC7** | `EXCITE_LED` | **LED (Yellow)** | Indicates RF Excitation is Active. |
-| **PB6** | `ERR_LED` | **LED (Red)** | Indicates Error State. |
+| **PC9** | `MEAS_LED` | **LED (Blue)** | Indicates Measurement/Calibration in progress. |
+| **PC8** | `EXCITE_LED` | **LED (Yellow)** | Indicates RF Excitation is Active. |
+| **PC6** | `ERR_LED` | **LED (Red)** | Indicates Error State. |
 | **PA4** | `FRQ_TN` | **DAC1 Ch1** | Frequency Tuning Varicap Voltage. |
 | **PA5** | `Q_FACT_TN` | **DAC1 Ch2** | Q-Factor Tuning Varicap Voltage. |
-| **PA9** | `SQR_20M_OUT` | **TIM1 CH2** | 20 MHz PWM Excitation Signal. |
-| **PA1** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
-| **PA0** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
+| **PA0** | `SQR_20M_OUT` | **TIM1 CH2** | 20 MHz PWM Excitation Signal. |
+| **PC11** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
+| **PC10** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
 | **PA2** | `VCP_TX` | **USART2 TX** | USB Virtual COM Port TX. |
 | **PA3** | `VCP_RX` | **USART2 RX** | USB Virtual COM Port RX. |
-| **PC8** | `GAIN_SLCT_1` | **GPIO Out** | RF Gain Select Bit 0. |
-| **PC9** | `GAIN_SLCT_2` | **GPIO Out** | RF Gain Select Bit 1. |
-| **PB8** | `I2C1_SCL` | **I2C SCL** | LCD Display Clock. |
+| **PC3** | `GAIN_SLCT_1` | **GPIO Out** | RF Gain Select Bit 0. |
+| **PC1** | `GAIN_SLCT_2` | **GPIO Out** | RF Gain Select Bit 1. |
+| **PB6** | `I2C1_SCL` | **I2C SCL** | LCD Display Clock. |
 | **PB9** | `I2C1_SDA` | **I2C SDA** | LCD Display Data. |
 
 ### Electronics Notes
