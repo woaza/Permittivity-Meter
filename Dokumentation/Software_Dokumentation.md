@@ -4,13 +4,85 @@
 
 ### 1.1 Zweck des Dokuments
 
+This document provides a complete software reference for the Permittivity Meter V2 firmware running on the STM32L476RG (NUCLEO-L476RG). It covers every layer from the application FSM down to the HAL Board interface, including the mock simulation layer, communication protocol, PC tools, and test infrastructure. The goal is to enable developers and testers to understand, modify, and extend the firmware without additional oral briefing.
+
 ### 1.2 Geltungsbereich
+
+**In scope**: All firmware layers above and including the HAL Board (`hl/hal_board.c`):
+
+- Application layer (FSM, measurement algorithms, RF trace, math model)
+- Communication layer (ASCII protocol parser, USB CDC bridge, planned Bluetooth transport)
+- BSP layer (RF frontend abstraction, UI, LCD)
+- Mock Board (simulated RF response for hardware-free testing)
+- HAL Board (direct hardware control for manual mode)
+- HAL driver wrappers (`hal_gpio`, `hal_dac`, `hal_adc`, `hal_pwm`)
+- PC tools (CLI, GUI, lifecycle test scripts)
+- Command protocol reference (all `CMD:*`, `STAT:*`, `DAT:*` frames)
+- Build configuration and linker layout
+
+**Out of scope**: The vendor-provided STM32 HAL library (`Drivers/`), CMSIS core, CubeMX-generated code, and the NINA Bluetooth module firmware.
 
 ### 1.3 Zielgruppe
 
+- **Firmware developers** implementing new features or transitioning from mock to real hardware.
+- **Test engineers** using the PC tools and pytest infrastructure to validate firmware behaviour.
+- **System integrators** connecting the device to a smartphone app via Bluetooth or PC via USB.
+- **Reviewers and supervisors** assessing the software architecture and development status.
+
 ### 1.4 Referenzen und verwandte Dokumente
 
+| Document | Location | Description |
+|----------|----------|-------------|
+| `README.md` | Repository root | Project overview, CLI command reference, development roadmap |
+| `ToDos.md` | Repository root | Phase-based development task list |
+| `Milestones.md` | Repository root | Project milestones |
+| `Flowchart.mmd` | Repository root | FSM flowchart (Mermaid) |
+| `PermitivityMeterV2.ioc` | `PermittivityMeterV2/PermitivityMeterV2/` | STM32CubeMX device configuration |
+| `Dokumentation/` | `Dokumentation/` | Hardware schematics, signal-path documentation |
+| `tools/README.md` | `tools/` | PC tool usage instructions (if present) |
+
 ### 1.5 Abkürzungen und Begriffe
+
+| Abbreviation | Meaning |
+|--------------|---------|
+| ADC | Analogue-to-Digital Converter |
+| BSP | Board Support Package |
+| BT | Bluetooth |
+| CAL | Calibration (air-reference sweep) |
+| CDC | Communication Device Class (USB) |
+| CLI | Command-Line Interface |
+| CMD | Command (host → device frame prefix) |
+| CSS | Clock Security System (HSE loss detection) |
+| DAC | Digital-to-Analogue Converter |
+| DAT | Data (device → host payload frame prefix) |
+| DMA | Direct Memory Access |
+| DFT | Discrete Fourier Transform |
+| FSM | Finite State Machine |
+| GPIO | General-Purpose Input/Output |
+| GUI | Graphical User Interface |
+| HAL | Hardware Abstraction Layer |
+| HL | Hardware Layer (driver wrapper prefix) |
+| HSE | High-Speed External oscillator |
+| I2C | Inter-Integrated Circuit |
+| ISR | Interrupt Service Routine |
+| IWDG | Independent Watchdog |
+| LCD | Liquid Crystal Display |
+| LED | Light-Emitting Diode |
+| LUT | Look-Up Table |
+| MCU | Microcontroller Unit |
+| MEAS | Measurement (snow sweep) |
+| MSI | Multi-Speed Internal oscillator |
+| NINA | u-blox NINA-W156 Bluetooth/WiFi module |
+| NMI | Non-Maskable Interrupt |
+| PWM | Pulse-Width Modulation |
+| RF | Radio Frequency |
+| STAT | Status (device → host acknowledgement frame prefix) |
+| TIM | Timer peripheral |
+| UART | Universal Asynchronous Receiver-Transmitter |
+| USART | Universal Synchronous/Asynchronous Receiver-Transmitter |
+| VCP | Virtual COM Port |
+| ε′ | Real part of relative permittivity |
+| ε″ | Imaginary part of relative permittivity |
 ---
 
 ## 2. Systemübersicht
