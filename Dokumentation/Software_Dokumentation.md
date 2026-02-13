@@ -1,28 +1,100 @@
-# Software-Dokumentation – Permittivity Meter V2
+# Software Documentation – Permittivity Meter V2
 
-## 1. Einleitung
+## 1. Introduction
 
-### 1.1 Zweck des Dokuments
+### 1.1 Purpose of This Document
 
-### 1.2 Geltungsbereich
+This document provides a complete software reference for the Permittivity Meter V2 firmware running on the STM32L476RG (NUCLEO-L476RG). It covers every layer from the application FSM down to the HAL Board interface, including the mock simulation layer, communication protocol, PC tools, and test infrastructure. The goal is to enable developers and testers to understand, modify, and extend the firmware without additional oral briefing.
 
-### 1.3 Zielgruppe
+### 1.2 Scope
 
-### 1.4 Referenzen und verwandte Dokumente
+**In scope**: All firmware layers above and including the HAL Board (`hl/hal_board.c`):
 
-### 1.5 Abkürzungen und Begriffe
+- Application layer (FSM, measurement algorithms, RF trace, math model)
+- Communication layer (ASCII protocol parser, USB CDC bridge, planned Bluetooth transport)
+- BSP layer (RF frontend abstraction, UI, LCD)
+- Mock Board (simulated RF response for hardware-free testing)
+- HAL Board (direct hardware control for manual mode)
+- HAL driver wrappers (`hal_gpio`, `hal_dac`, `hal_adc`, `hal_pwm`)
+- PC tools (CLI, GUI, lifecycle test scripts)
+- Command protocol reference (all `CMD:*`, `STAT:*`, `DAT:*` frames)
+- Build configuration and linker layout
+
+**Out of scope**: The vendor-provided STM32 HAL library (`Drivers/`), CMSIS core, CubeMX-generated code, and the NINA Bluetooth module firmware.
+
+### 1.3 Target Audience
+
+- **Firmware developers** implementing new features or transitioning from mock to real hardware.
+- **Test engineers** using the PC tools and pytest infrastructure to validate firmware behaviour.
+- **System integrators** connecting the device to a smartphone app via Bluetooth or PC via USB.
+- **Reviewers and supervisors** assessing the software architecture and development status.
+
+### 1.4 References and Related Documents
+
+| Document | Location | Description |
+|----------|----------|-------------|
+| `README.md` | Repository root | Project overview, CLI command reference, development roadmap |
+| `ToDos.md` | Repository root | Phase-based development task list |
+| `Milestones.md` | Repository root | Project milestones |
+| `Flowchart.mmd` | Repository root | FSM flowchart (Mermaid) |
+| `PermitivityMeterV2.ioc` | `PermittivityMeterV2/PermitivityMeterV2/` | STM32CubeMX device configuration |
+| `Dokumentation/` | `Dokumentation/` | Hardware schematics, signal-path documentation |
+| `tools/README.md` | `tools/` | PC tool usage instructions (if present) |
+
+### 1.5 Abbreviations and Terms
+
+| Abbreviation | Meaning |
+|--------------|---------|
+| ADC | Analogue-to-Digital Converter |
+| BSP | Board Support Package |
+| BT | Bluetooth |
+| CAL | Calibration (air-reference sweep) |
+| CDC | Communication Device Class (USB) |
+| CLI | Command-Line Interface |
+| CMD | Command (host → device frame prefix) |
+| CSS | Clock Security System (HSE loss detection) |
+| DAC | Digital-to-Analogue Converter |
+| DAT | Data (device → host payload frame prefix) |
+| DMA | Direct Memory Access |
+| DFT | Discrete Fourier Transform |
+| FSM | Finite State Machine |
+| GPIO | General-Purpose Input/Output |
+| GUI | Graphical User Interface |
+| HAL | Hardware Abstraction Layer |
+| HL | Hardware Layer (driver wrapper prefix) |
+| HSE | High-Speed External oscillator |
+| I2C | Inter-Integrated Circuit |
+| ISR | Interrupt Service Routine |
+| IWDG | Independent Watchdog |
+| LCD | Liquid Crystal Display |
+| LED | Light-Emitting Diode |
+| LUT | Look-Up Table |
+| MCU | Microcontroller Unit |
+| MEAS | Measurement (snow sweep) |
+| MSI | Multi-Speed Internal oscillator |
+| NINA | u-blox NINA-W156 Bluetooth/WiFi module |
+| NMI | Non-Maskable Interrupt |
+| PWM | Pulse-Width Modulation |
+| RF | Radio Frequency |
+| STAT | Status (device → host acknowledgement frame prefix) |
+| TIM | Timer peripheral |
+| UART | Universal Asynchronous Receiver-Transmitter |
+| USART | Universal Synchronous/Asynchronous Receiver-Transmitter |
+| VCP | Virtual COM Port |
+| ε′ | Real part of relative permittivity |
+| ε″ | Imaginary part of relative permittivity |
 ---
 
-## 2. Systemübersicht
+## 2. System Overview
 
-### 2.1 Projektbeschreibung
+### 2.1 Project Description
 
 The Permittivity Meter is an embedded device that measures the dielectric properties (permittivity, density) of snow — using an RF resonance circuit. A 20 MHz excitation signal drives a resonator whose resonance frequency shifts depending on the snow under test. The firmware sweeps a DAC-controlled varicap voltage range, detects the resonance dip, and calculates the permittivity from the frequency shift between an air calibration and the snow measurement.
 
-The system is controlled via an ASCII command protocol (`CMD:*` / `STAT:*` / `DAT:*`) over USB (USART2). A Bluetooth interface (UART4 / NINA module) is planned to inegrate a smarthpone app. The device can be used standalone via hardware buttons. A built-in mock layer allows full-cycle testing without RF hardware.
+The system is controlled via an ASCII command protocol (`CMD:*` / `STAT:*` / `DAT:*`) over USB (USART2). A Bluetooth interface (UART4 / NINA module) is planned to integrate a smartphone app. The device can be used standalone via hardware buttons. A built-in mock layer allows full-cycle testing without RF hardware.
 
-### 2.2 Architekturübersicht (Layer-Diagramm)
-Todo replace with image from Präsentation
+### 2.2 Architecture Overview (Layer Diagram)
+
 ```
 ┌──────────────────────────────────────────────────────┐
 │  PC / Host                                           │
@@ -61,13 +133,13 @@ Todo replace with image from Präsentation
 └────────────────────────┬─────────────────────────────┘
                          │
 ┌────────────────────────▼─────────────────────────────┐
-│  STM32 HAL / CMSIS  (vendor library, CubeMX generated│)
+│  STM32 HAL / CMSIS  (vendor library, CubeMX generated) │
 └────────────────────────┬─────────────────────────────┘
                          │
                   [ STM32L476RG ]
 ```
 
-### 2.3 Zielhardware (STM32L476RG / NUCLEO-L476RG)
+### 2.3 Target Hardware (STM32L476RG / NUCLEO-L476RG)
 
 | Parameter | Value |
 |-----------|-------|
@@ -82,7 +154,7 @@ Todo replace with image from Präsentation
 | UI | 1 button (PC13), 4 LEDs (PA6, PA7, PC7, PB6), I2C LCD (PB8/PB9) |
 | RF Gain Select | 2-bit GPIO (PC8, PC9) |
 
-### 2.4 Softwareschichten im Überblick
+### 2.4 Software Layers Overview
 
 | Layer | Files | Responsibility |
 |-------|-------|----------------|
@@ -99,41 +171,199 @@ Todo replace with image from Präsentation
 
 ## 3. HAL Board Layer (`hl/hal_board.c`)
 
-### 3.1 Zweck und Verantwortlichkeit
+### 3.1 Purpose and Responsibility
 
-### 3.2 Schnittstelle zum darunterliegenden HAL-Treiber
+The HAL Board layer provides **direct hardware control** for manual testing and debugging. It wraps the low-level HAL drivers (`hal_gpio`, `hal_dac`, `hal_adc`, `hal_pwm`) behind a validated, parameter-checked API. Unlike the BSP layer (which abstracts mock vs. real hardware for the application), HAL Board always operates on **real peripherals** and is accessed exclusively through `CMD:HAL:*` commands in manual mode.
 
-### 3.3 Bereitgestellte Funktionen
+```
+bt_manager.c  →  handle_hal_command()
+                     ↓
+              hal_board.c  (validation, mapping)
+                     ↓
+         hl/ drivers  (hal_gpio, hal_dac, hal_adc, hal_pwm)
+                     ↓
+              STM32 HAL  →  Hardware
+```
 
-#### 3.3.1 LED-Steuerung (`HalBoard_LED_Set`, `HalBoard_LED_Get`, `HalBoard_LED_Toggle`)
+Status codes returned by all functions:
 
-#### 3.3.2 Button-Abfrage (`HalBoard_BTN_Read`)
+```c
+typedef enum {
+    HAL_BOARD_OK = 0,
+    HAL_BOARD_ERROR,
+    HAL_BOARD_ERROR_INVALID_PARAM,
+    HAL_BOARD_ERROR_NOT_READY
+} HalBoard_Status_t;
+```
 
-#### 3.3.3 DAC-Steuerung (`HalBoard_DAC_Set`, `HalBoard_DAC_SetRaw`)
+### 3.2 Interface to Lower-Level HAL Drivers
 
-#### 3.3.4 ADC-Abfrage (`HalBoard_ADC_Read`, `HalBoard_ADC_ReadRaw`)
+Four driver modules sit below `hal_board.c`:
 
-#### 3.3.5 PWM-Steuerung (`HalBoard_PWM_Start`, `HalBoard_PWM_Stop`, `HalBoard_PWM_SetFreq`, `HalBoard_PWM_SetDuty`)
+| Driver | File | Peripheral | Key constants |
+|--------|------|------------|---------------|
+| **hal_gpio** | `hl/hal_gpio.c` | GPIO (LEDs, button, gain, NINA) | 9 pins (`HL_GPIO_PIN_COUNT`) |
+| **hal_dac** | `hl/hal_dac.c` | DAC1 (PA4 freq, PA5 Q) | 12-bit, 3.3 V ref, max 4095 |
+| **hal_adc** | `hl/hal_adc.c` | ADC1 (PC0 notch amp) | 512-sample DMA buffer, 122.5 kHz via TIM6 |
+| **hal_pwm** | `hl/hal_pwm.c` | TIM1 CH2 (PA9 excitation) | 80 MHz timer clock, default 20 MHz / 50 % |
 
-#### 3.3.6 Gain-Steuerung (`HalBoard_GAIN_Set`, `HalBoard_GAIN_Get`)
+Pin mapping (from `hal_gpio.c` and `hardware_config.h`):
 
-#### 3.3.7 NINA-Modul-Steuerung (`HalBoard_NINA_Reset`, `HalBoard_NINA_Stop`)
+| Pin enum | GPIO | Function |
+|----------|------|----------|
+| `HL_GPIO_LED_INIT` | PA6 | Green LED (init/idle) |
+| `HL_GPIO_LED_MEAS` | PA7 | Blue LED (measurement) |
+| `HL_GPIO_LED_EXCITE` | PC7 | Yellow LED (excitation) |
+| `HL_GPIO_LED_ERR` | PB1 | Red LED (error) |
+| `HL_GPIO_BTN_USER` | PC13 | User button B1 (active-low) |
+| `HL_GPIO_RF_GAIN_0` | PC8 | Gain select LSB |
+| `HL_GPIO_RF_GAIN_1` | PC9 | Gain select MSB |
+| `HL_GPIO_NINA_RST` | PA11 | NINA reset |
+| `HL_GPIO_NINA_STOP` | PA12 | NINA stop |
 
-#### 3.3.8 LCD-Steuerung (`HalBoard_LCD_SetLine`)
+Additional analogue pins: PA4 (DAC CH1, freq tuning), PA5 (DAC CH2, Q-factor tuning), PC0 (ADC1 CH1, notch amp input), PA9 (TIM1 CH2, 20 MHz PWM output).
 
-#### 3.3.9 Initialisierung (`HalBoard_Init`)
+### 3.3 Provided Functions
 
-### 3.4 Manual-Mode-Konzept (Handbetrieb)
+#### 3.3.1 LED Control (`HalBoard_LED_Set`, `HalBoard_LED_Get`, `HalBoard_LED_Toggle`)
 
-### 3.5 CMD:HAL:\*-Befehlsrouting
+```c
+HalBoard_Status_t HalBoard_LED_Set(uint8_t led_id, uint8_t state);
+HalBoard_Status_t HalBoard_LED_Get(uint8_t led_id, uint8_t *state);
+HalBoard_Status_t HalBoard_LED_Toggle(uint8_t led_id);
+```
+
+`led_id` 0–3 maps to INIT/MEAS/EXCITE/ERR via an internal `led_id_to_gpio()` lookup. `state`: 0 = off, 1 = on. Returns `HAL_BOARD_ERROR_INVALID_PARAM` if `led_id > 3`. Delegates to `HL_GPIO_Write()`, `HL_GPIO_Read()`, `HL_GPIO_Toggle()`.
+
+#### 3.3.2 Button Read (`HalBoard_BTN_Read`)
+
+```c
+HalBoard_Status_t HalBoard_Button_Read(uint8_t *state);
+```
+
+Reads `HL_GPIO_BTN_USER` (PC13). The Nucleo B1 button is **active-low**; the firmware inverts: `GPIO_LOW → state = 1` (pressed).
+
+#### 3.3.3 DAC Control (`HalBoard_DAC_Set`, `HalBoard_DAC_SetRaw`)
+
+```c
+HalBoard_Status_t HalBoard_DAC_SetVoltage(uint8_t channel, float voltage);
+HalBoard_Status_t HalBoard_DAC_SetRaw(uint8_t channel, uint16_t raw_value);
+```
+
+`channel` 0 = freq tuning (PA4, `DAC_CH_FREQ_TUNE`), 1 = Q-factor (PA5, `DAC_CH_Q_FACTOR`). Voltage range: 0.0–3.3 V. Raw range: 0–4095. Conversion: `raw = (voltage / 3.3) × 4095`. Delegates to `HL_DAC_SetVoltage()` / `HL_DAC_SetRawValue()`.
+
+#### 3.3.4 ADC Read (`HalBoard_ADC_Read`, `HalBoard_ADC_ReadRaw`)
+
+```c
+HalBoard_Status_t HalBoard_ADC_ReadVoltage(float *voltage);
+HalBoard_Status_t HalBoard_ADC_ReadSingle(uint16_t *value);
+bool              HalBoard_ADC_IsBufferReady(void);
+```
+
+ADC1 runs **continuously** via TIM6 trigger + DMA circular mode with ping-pong 512-sample half-buffers (`ADC_DMA_BUFFER_SIZE = 1024`). `ReadSingle` averages the complete half-buffer (`sum / ADC_BUFFER_SIZE`). `ReadVoltage` converts: `(raw / 4095) × 3.3`. Returns `HAL_BOARD_ERROR_NOT_READY` if the DMA buffer is not yet complete. **Does not support blocking single conversions** (would conflict with DMA).
+
+Timer period: `80 MHz / 653 ≈ 122.5 kHz` sample rate.
+
+#### 3.3.5 PWM Control (`HalBoard_PWM_Start`, `HalBoard_PWM_Stop`, `HalBoard_PWM_SetFreq`, `HalBoard_PWM_SetDuty`)
+
+```c
+PWM_StatusTypeDef HAL_PWM_Init(TIM_HandleTypeDef *htim);
+PWM_StatusTypeDef HAL_PWM_Start(void);
+PWM_StatusTypeDef HAL_PWM_Stop(void);
+PWM_StatusTypeDef HAL_PWM_SetFrequency(uint32_t frequency_hz);
+PWM_StatusTypeDef HAL_PWM_SetDutyCycle(uint8_t duty_cycle);
+uint32_t          HAL_PWM_GetFrequency(void);
+uint8_t           HAL_PWM_GetDutyCycle(void);
+bool              HAL_PWM_IsRunning(void);
+```
+
+TIM1 CH2 on PA9. Timer clock: 80 MHz. Frequency formula: `f = 80 MHz / ((PSC + 1) × (ARR + 1))`. Period clamped to ≤ 65535. Pulse: `((ARR + 1) × duty) / 100`. Defaults: 20 MHz, 50 % duty. The PWM output is configured at boot but **not started** — the FSM controls excitation timing.
+
+#### 3.3.6 Gain Control (`HalBoard_GAIN_Set`, `HalBoard_GAIN_Get`)
+
+```c
+HalBoard_Status_t HalBoard_RF_SetGain(uint8_t gain_level);
+HalBoard_Status_t HalBoard_RF_GetGain(uint8_t *gain_level);
+```
+
+2-bit binary encoding on PC8 (bit 0, LSB) and PC9 (bit 1, MSB). `gain_level` 0–3 maps to 4 discrete gain settings. Set: decomposes into individual GPIO writes. Get: reads both pins and reconstructs `(bit1 << 1) | bit0`.
+
+#### 3.3.7 NINA Module Control (`HalBoard_NINA_Reset`, `HalBoard_NINA_Stop`)
+
+```c
+HalBoard_Status_t HalBoard_NINA_SetReset(uint8_t state);
+HalBoard_Status_t HalBoard_NINA_SetStop(uint8_t state);
+```
+
+`NINA_SetReset`: PA11 — 0 = hold in reset, 1 = release (run). `NINA_SetStop`: PA12 — 0 = running, 1 = stopped. Controls the NINA-W156 Bluetooth module.
+
+#### 3.3.8 LCD Control (`HalBoard_LCD_SetLine`)
+
+LCD writes are routed through `BSP_LCD_DisplayStringAt()` (see Ch. 5.4). The HAL board layer does not have its own LCD driver — the `CMD:HAL:LCD:SET` command calls the BSP LCD buffer directly.
+
+#### 3.3.9 Initialisation (`HalBoard_Init`)
+
+```c
+void HalBoard_Init(void);
+```
+
+Calls `HL_GPIO_Init()` and sets the internal `s_initialized` flag. Must be called once after `HAL_Init()` and peripheral clock setup.
+
+### 3.4 Manual-Mode Concept
+
+All `CMD:HAL:*` commands are **locked by default**. They are only accepted when the FSM is in `STATE_MANUAL_OPERATION` (entered via `CMD:MANUAL:ON`). This prevents accidental hardware toggling during measurement or calibration cycles.
+
+If a `CMD:HAL:*` command arrives while manual mode is inactive, `bt_manager.c` responds with `STAT:HAL_LOCKED` without calling any HAL Board function. While manual mode is active, `CMD:CAL` / `CMD:MEAS` are rejected with `STAT:MANUAL_ACTIVE`.
+
+### 3.5 CMD:HAL:\* Command Routing
+
+`bt_manager.c` → `handle_hal_command()` parses the sub-command after `CMD:HAL:` and routes to the appropriate `HalBoard_*` function:
+
+| Sub-command prefix | HAL Board function | Peripheral |
+|--------------------|-------------------|------------|
+| `LED:SET:<id>:<0/1>` | `HalBoard_LED_Set()` | GPIO |
+| `LED:GET:<id>` | `HalBoard_LED_Get()` | GPIO |
+| `LED:TOGGLE:<id>` | `HalBoard_LED_Toggle()` | GPIO |
+| `BTN:READ` | `HalBoard_Button_Read()` | GPIO |
+| `ADC:READ` | `HalBoard_ADC_ReadVoltage()` | ADC1 + DMA |
+| `ADC:RAW` | `HalBoard_ADC_ReadSingle()` | ADC1 + DMA |
+| `DAC:SET:<ch>:<V>` | `HalBoard_DAC_SetVoltage()` | DAC1 |
+| `DAC:RAW:<ch>:<val>` | `HalBoard_DAC_SetRaw()` | DAC1 |
+| `GAIN:SET:<0..3>` | `HalBoard_RF_SetGain()` | GPIO |
+| `GAIN:GET` | `HalBoard_RF_GetGain()` | GPIO |
+| `PWM:START / STOP / GET` | `HAL_PWM_Start/Stop/IsRunning` | TIM1 |
+| `PWM:FREQ:<hz>` | `HAL_PWM_SetFrequency()` | TIM1 |
+| `PWM:DUTY:<0..100>` | `HAL_PWM_SetDutyCycle()` | TIM1 |
+| `NINA:RST:<0/1>` | `HalBoard_NINA_SetReset()` | GPIO |
+| `NINA:STOP:<0/1>` | `HalBoard_NINA_SetStop()` | GPIO |
+| `LCD:SET:<line>:<text>` | `BSP_LCD_DisplayStringAt()` | BSP buffer |
+| `INIT` | `HalBoard_Init()` | All GPIO |
+
+Invalid sub-commands return `STAT:HAL_CMD_ERR`.
 
 ### 3.6 Push-Style ACK Frames (`STAT:HW:*`)
+
+In addition to legacy `STAT:HAL_*` acknowledgements, every successful `CMD:HAL:*` operation emits a structured `STAT:HW:*` push frame containing the applied value. This allows the PC GUI (`pc_ui.py`) to update controls immediately from responses instead of periodic polling.
+
+| Frame pattern | Content |
+|---------------|---------|
+| `STAT:HW:LED:<id>:<0/1>` | LED state after set/toggle |
+| `STAT:HW:DAC:<ch>:V:<volts>` | DAC voltage applied |
+| `STAT:HW:DAC:<ch>:RAW:<val>` | DAC raw value applied |
+| `STAT:HW:ADC:V:<volts>` | ADC voltage readback |
+| `STAT:HW:ADC:RAW:<val>` | ADC raw readback |
+| `STAT:HW:GAIN:<0..3>` | Gain level |
+| `STAT:HW:BTN:<0/1>` | Button state |
+| `STAT:HW:NINA:RST:<0/1>` / `STOP:<0/1>` | NINA control pin state |
+| `STAT:HW:PWM:RUN:<0/1>` / `FREQ:<hz>` / `DUTY:<pct>` | PWM state (3 frames on start/stop/get) |
+
+These frames are emitted by `output_hw_framef()` in `bt_manager.c` (format: `"STAT:HW:<payload>"`, max 96 bytes).
 
 ---
 
 ## 4. Mock Board Layer (`mocks/mock_board.c`)
 
-### 4.1 Zweck und Einsatzbereich
+### 4.1 Purpose and Use Cases
 
 The mock board provides a software-only simulation of the RF frontend, UI elements (LEDs, button), BT command queue, and debug log buffer. It allows the complete firmware — FSM, measurement algorithms, protocol parser — to run and be tested without any physical hardware attached.
 
@@ -143,11 +373,11 @@ Primary use cases:
 - **Automated testing**: PC-side test scripts (`tools/`) can run calibration and measurement cycles against deterministic simulated responses.
 - **Failure injection**: Force `NAN` returns to verify error-handling paths.
 
-### 4.2 RF-Antwort-Modell (Parabolisches Dip-Modell)
+### 4.2 RF Response Model (Parabolic Dip Model)
 
 The mock simulates a resonance circuit whose amplitude shows a parabolic dip (minimum) at the resonance voltage. The measurement algorithms search for this minimum during coarse and fine sweeps.
 
-#### 4.2.1 Mathematische Formel
+#### 4.2.1 Mathematical Formula
 
 ```
 amplitude = base_amplitude + curvature × δ² − (q_voltage × 0.02) + noise
@@ -161,7 +391,7 @@ where:
 
 When force-failure is enabled, the function returns `NAN` regardless of input.
 
-#### 4.2.2 Konfigurierbare Parameter (Resonanz, Rauschen, Basis, Krümmung)
+#### 4.2.2 Configurable Parameters (Resonance, Noise, Base, Curvature)
 
 | Parameter | Default | Set via | Description |
 |-----------|---------|---------|-------------|
@@ -171,7 +401,7 @@ When force-failure is enabled, the function returns `NAN` regardless of input.
 | Curvature | 0.3 + gain × 0.05 | gain index (0–3) | Controls how steeply amplitude rises away from resonance |
 | Force failure | off | `MockBoard_RF_SetForceFailure()` | When enabled, all reads return `NAN` |
 
-### 4.3 Bereitgestellte Funktionen
+### 4.3 Provided Functions
 
 #### 4.3.1 `MockBoard_Init` / `MockBoard_Reset`
 
@@ -200,7 +430,7 @@ Configuration setters that modify the simulated RF behaviour at runtime. Typical
 | **BT History** | `MockBoard_BT_SetLastTx`, `GetLastTx`, `GetHistoryEntry`, `ClearHistory` | 16-deep ring buffer recording transmitted frames |
 | **Debug Log** | `MockBoard_DebugPush`, `DebugCopy`, `DebugGetLast`, `DebugPeek`, `DebugClear` | 32-deep circular buffer for internal debug entries |
 
-### 4.4 CMD:MOCK:\*-Befehle
+### 4.4 CMD:MOCK:\* Commands
 
 These commands are parsed by `bt_manager.c` → `handle_mock_command()` and forwarded to `bsp_rf.c` wrapper functions.
 
@@ -214,11 +444,11 @@ These commands are parsed by `bt_manager.c` → `handle_mock_command()` and forw
 
 Invalid or unparseable mock commands return `STAT:MOCK_ERR`.
 
-### 4.5 Umschaltung Mock ↔ reale Hardware
+### 4.5 Mock ↔ Real Hardware Switching
 
 Currently there is **no runtime switch** between mock and real hardware. `bsp_rf.c` always delegates RF reads to `MockBoard_RF_ComputeAmplitude()`. To transition to real hardware, the BSP functions (`BSP_RF_SetFreqVaricap`, `BSP_RF_ReadAmplitude`, etc.) must be updated to call the HAL drivers (`HL_DAC_SetVoltage`, `HL_ADC_Read`, etc.) instead of — or in addition to — the mock. This transition is tracked as a high-priority TODO (see Chapter 17).
 
-### 4.6 Einschränkungen und bekannte Limitierungen
+### 4.6 Limitations
 
 - **No Q-factor modelling**: The Q-factor voltage only adds a small linear offset (`−0.02 × q_voltage`); a realistic Q-dependent bandwidth change is not simulated.
 - **Static curvature**: The parabola shape is fixed per gain index; real hardware exhibits non-linear and asymmetric resonance curves.
@@ -229,17 +459,17 @@ Currently there is **no runtime switch** between mock and real hardware. `bsp_rf
 
 ## 5. BSP Layer – Board Support Package
 
-### 5.1 Überblick und Zweck
+### 5.1 Overview and Purpose
 
 The BSP layer sits between the application logic (FSM, measurement) and the lower-level drivers (HAL / mock). It provides hardware-agnostic interfaces so upper layers never call HAL or mock functions directly. Currently all three BSP modules delegate to the mock board; the transition to real HAL drivers only requires changes inside the BSP — no application code needs to be modified.
 
 ### 5.2 BSP RF (`bsp_rf.c` / `bsp_rf.h`)
 
-#### 5.2.1 Zweck (Abstraktion des RF-Frontends)
+#### 5.2.1 Purpose (RF Frontend Abstraction)
 
 Abstracts the entire RF signal chain: DAC varicap control, gain selection, excitation enable, op-amp enable, and amplitude readback. Upper layers (`rf_measure.c`) call BSP RF functions without knowing whether a mock or real hardware is behind them.
 
-#### 5.2.2 Bereitgestellte Funktionen
+#### 5.2.2 Provided Functions
 
 | Function | Description |
 |----------|-------------|
@@ -262,21 +492,21 @@ Mock-configuration wrappers (forwarded to `MockBoard_RF_*`):
 
 Internal state: `s_freq_voltage`, `s_q_voltage`, `s_gain_idx`, `s_opamp_enabled`, `s_excitation_enabled`. All voltage/gain changes are logged via `Debug_LogDriver()`.
 
-#### 5.2.3 Switch-Point: Mock vs. reale Hardware
+#### 5.2.3 Switch-Point: Mock vs. Real Hardware
 
 `BSP_RF_ReadAmplitude()` currently calls `MockBoard_RF_ComputeAmplitude(s_freq_voltage, s_q_voltage, s_gain_idx)`. To switch to real hardware, this single call must be replaced with a sequence of `HL_DAC_SetVoltage()` → settle delay → `HL_ADC_Read()`. The setter functions (`SetFreqVaricap`, `SetQVaricap`, `SetGain`) will additionally need to forward values to the HAL drivers.
 
-#### 5.2.4 Geplante Erweiterungen (DMA Buffer Capture)
+#### 5.2.4 Planned Extensions (DMA Buffer Capture)
 
 A future `BSP_RF_CaptureBuffer(float *buf, size_t len)` will use DMA to capture a block of ADC samples for frequency-domain processing (undersampling + DFT/Goertzel in `math_model.c`).
 
 ### 5.3 BSP UI (`bsp_ui.c` / `bsp_ui.h`)
 
-#### 5.3.1 Zweck (Button- und LED-Verwaltung)
+#### 5.3.1 Purpose (Button and LED Management)
 
 Provides a unified interface for the user button (PC13) and the four status LEDs. All calls delegate to the mock board.
 
-#### 5.3.2 Bereitgestellte Funktionen
+#### 5.3.2 Provided Functions
 
 | Function | Description |
 |----------|-------------|
@@ -288,21 +518,21 @@ Provides a unified interface for the user button (PC13) and the four status LEDs
 
 LED identifiers (enum): `LED_STATUS` (0), `LED_MEAS` (1), `LED_EXCITE` (2), `LED_ERROR` (3), `LED_COUNT` (4).
 
-#### 5.3.3 Button-Logik und Entprellung
+#### 5.3.3 Button Logic and Debouncing
 
 No debouncing is implemented at BSP level. `BSP_Button_SetState()` stores the raw value via `MockBoard_UI_SetButton()`. Debounce logic, if needed, is the responsibility of the FSM or a future interrupt-driven GPIO handler.
 
-#### 5.3.4 LED-Zustandsverwaltung
+#### 5.3.4 LED State Management
 
 LED state is held inside the mock board's internal array (indexed by `led_id`). `BSP_LED_Set()` normalises the state to 0/1 before storing. The FSM sets LEDs according to the current application state (e.g., `LED_ERROR` on in `STATE_ERROR`).
 
 ### 5.4 BSP LCD (`bsp_lcd.c` / `bsp_lcd.h`)
 
-#### 5.4.1 Zweck (LCD-Pufferverwaltung)
+#### 5.4.1 Purpose (LCD Buffer Management)
 
 Manages a 2-line × 16-character in-memory buffer that mirrors the physical I2C LCD content. Upper layers write to this buffer; a future driver will flush it to the display.
 
-#### 5.4.2 Bereitgestellte Funktionen
+#### 5.4.2 Provided Functions
 
 | Function | Description |
 |----------|-------------|
@@ -313,15 +543,15 @@ Manages a 2-line × 16-character in-memory buffer that mirrors the physical I2C 
 
 Constants: `LCD_LINE_COUNT = 2`, `LCD_CHAR_COUNT = 16`.
 
-#### 5.4.3 I2C-Anbindung und Zeilenpuffer
+#### 5.4.3 I2C Connection and Line Buffer
 
 The current implementation is **buffer-only** — no I2C transactions are performed. The internal buffer `s_lcd_lines[2][17]` holds null-terminated strings. When real hardware is connected, `BSP_LCD_DisplayStringAt()` will additionally push the buffer content to the I2C LCD controller (PB8/PB9). The `CMD:LCD` and `CMD:HAL:LCD:SET` commands read from / write to this buffer via `BSP_LCD_GetLine()` / `BSP_LCD_DisplayStringAt()`.
 
 ---
 
-## 6. Applikationsschicht – Finite State Machine (`fsm_main.c`)
+## 6. Application Layer – Finite State Machine (`fsm_main.c`)
 
-### 6.1 Überblick und Verantwortlichkeit
+### 6.1 Overview and Responsibility
 
 The FSM is the central coordinator of the firmware. It owns the application lifecycle — initialisation, calibration, measurement, result display, manual override, and error recovery. It consumes events from the button and the BT protocol parser, drives BSP outputs (LEDs, LCD, RF enable), and delegates measurement work to `rf_measure.c`.
 C
@@ -334,8 +564,7 @@ Public API:
 | `FSM_RunOnce(void)` | Execute one FSM cycle (poll button, drain BT events, process queue, run state handler). |
 | `FSM_GetState(void)` | Return current `AppState_t`. |
 
-Todo Change Pictures
-### 6.2 Zustandsdiagramm
+### 6.2 State Diagram
 
 ```
                   ┌──────────────────────────────────────────────┐
@@ -373,7 +602,7 @@ Todo Change Pictures
           BT_CONN  └──────────┘                                │
 ```
 
-### 6.3 Zustände im Detail
+### 6.3 States in Detail
 
 #### 6.3.1 `STATE_INIT`
 
@@ -413,15 +642,15 @@ On entry: disable excitation/op-amp, all LEDs off except `LED_ERROR`, LCD `"ERRO
 
 Recovery: button press or `BT_CONN` → INIT (full reinitialisation). `BT_CAL` / `BT_MEAS` rejected with `STAT:ERR`.
 
-#### 6.3.7 `STATE_CALCULATION` (geplant)
+#### 6.3.7 `STATE_CALCULATION` (planned)
 
 On entry: disable excitation, `LED_EXCITE` off, **invalidate calibration** (`s_calibration.is_valid = 0`), display result on LCD (`"ER X.XX EI Y.YY" / "D Z.ZZkg/m3"`), send `DAT:RES:…` via `BT_SendResult()`.
 
 Button press → IDLE (acknowledge). `BT_CAL` → CALIBRATION (new cycle). `BT_MEAS` rejected (`STAT:ERR:NEED_CAL` — must recalibrate after each measurement).
 
-### 6.4 Events und Event-Queue
+### 6.4 Events and Event Queue
 
-#### 6.4.1 FSM-Event-Typen
+#### 6.4.1 FSM Event Types
 
 ```c
 typedef enum {
@@ -439,7 +668,7 @@ typedef enum {
 } FSM_Event_t;
 ```
 
-#### 6.4.2 Event-Quellen (Button, BT-Manager)
+#### 6.4.2 Event Sources (Button, BT Manager)
 
 | Source | Mechanism |
 |--------|-----------|
@@ -447,11 +676,11 @@ typedef enum {
 | **BT Manager** | `BT_PopEvent()` drained each cycle; `BT_EVENT_CONN/CAL/MEAS` mapped to `FSM_EVENT_BT_*` and enqueued. `BT_EVENT_MANUAL_ON/OFF` handled directly (immediate transition). |
 | **Internal** | `FSM_EVENT_INIT_DONE`, `CAL_DONE`, `MEAS_DONE` generated by state handlers after completing their work. |
 
-#### 6.4.3 Event-Verarbeitung und Priorisierung
+#### 6.4.3 Event Processing and Prioritisation
 
 Circular buffer with depth **8** (`FSM_EVENT_QUEUE_SIZE`). On overflow the oldest event is dropped and `"QUEUE overflow"` is logged. `FSM_EVENT_NONE` is silently discarded. Events are processed FIFO — no priority levels. `BT_MANUAL_ON/OFF` bypass the queue and take effect immediately.
 
-### 6.5 Zustandsübergänge
+### 6.5 State Transitions
 
 | Current State | Event | Next State | Response |
 |---------------|-------|------------|----------|
@@ -480,7 +709,7 @@ Circular buffer with depth **8** (`FSM_EVENT_QUEUE_SIZE`). On overflow the oldes
 | MANUAL_OPERATION | `BT_CAL` / `BT_MEAS` | MANUAL_OPERATION | `STAT:MANUAL_ACTIVE` |
 | MANUAL_OPERATION | `BT_CONN` | MANUAL_OPERATION | `STAT:MANUAL` |
 
-### 6.6 Fehlerbehandlung und Recovery
+### 6.6 Error Handling and Recovery
 
 | Scenario | Detection | Action |
 |----------|-----------|--------|
@@ -494,9 +723,9 @@ Circular buffer with depth **8** (`FSM_EVENT_QUEUE_SIZE`). On overflow the oldes
 
 ---
 
-## 7. Messlogik (`rf_measure.c`)
+## 7. Measurement Logic (`rf_measure.c`)
 
-### 7.1 Überblick und Verantwortlichkeit
+### 7.1 Overview and Responsibility
 
 Implements the two core measurement routines — air calibration and snow measurement — using a coarse-then-fine sweep strategy with parabolic interpolation. The module calls BSP RF functions exclusively and has no direct hardware dependency.
 
@@ -530,9 +759,9 @@ typedef struct {
 } MeasurementResult_t;
 ```
 
-### 7.2 Kalibrierung (Air Calibration)
+### 7.2 Calibration (Air Calibration)
 
-#### 7.2.1 Ablauf (`RF_PerformAirCalibration`)
+#### 7.2.1 Procedure (`RF_PerformAirCalibration`)
 
 1. Begin trace (`RF_TRACE_MODE_CALIBRATION`), enable excitation and set default gain.
 2. **Coarse sweep** → find approximate resonance voltage.
@@ -553,7 +782,7 @@ Scans the full DAC range **0.0 – 2.5 V** in **0.05 V** steps (≈ 51 samples).
 
 Searches a ±0.025 V window (`FINE_WINDOW_STEPS × FINE_STEP_V = 5 × 0.005`) around the coarse result in **0.005 V** steps (≈ 11 samples). Start/end clamped to [0.0, 2.5] V. Again finds the minimum amplitude.
 
-#### 7.2.4 Parabolische Interpolation
+#### 7.2.4 Parabolic Interpolation
 
 `refine_vertex(float center)` — static.
 
@@ -565,13 +794,13 @@ vertex_x = numerator / (2 × denominator)
 
 where numerator and denominator are derived from the standard three-point quadratic vertex formula. Falls back to `center` if the denominator is zero, any value is non-finite, or the computed vertex lies outside [0.0, 2.5] V.
 
-#### 7.2.5 Ergebnis und Speicherung
+#### 7.2.5 Result and Storage
 
 On success the returned `CalibrationData_t` contains the parabola-refined resonance voltage (`air_dac_freq_voltage`), the corresponding minimum amplitude (`air_adc_min`), and `is_valid = 1`. The FSM stores this struct and gates subsequent measurement requests on `is_valid`.
 
-### 7.3 Messung (Snow Measurement)
+### 7.3 Measurement (Snow Measurement)
 
-#### 7.3.1 Ablauf (`RF_PerformSnowMeasurement`)
+#### 7.3.1 Procedure (`RF_PerformSnowMeasurement`)
 
 1. Validate calibration (`is_valid`). If invalid: return ε′ = 1.0, ε″ = 0.0 immediately.
 2. Begin trace (`RF_TRACE_MODE_MEASUREMENT`), enable excitation.
@@ -580,17 +809,17 @@ On success the returned `CalibrationData_t` contains the parabola-refined resona
 5. Compute results: `frequency_shift`, `epsilon_real`, `epsilon_imag` (via `Math_CalculateEpsilon()`), `snow_density` (linear model: `0.3 + shift × 0.1`).
 6. Disable excitation, end trace, return `MeasurementResult_t`.
 
-#### 7.3.2 Suchbereich relativ zur Kalibrierung
+#### 7.3.2 Search Range Relative to Calibration
 
 The search window is **±0.2 V** (fixed) centred on the air calibration voltage. This is significantly narrower than the full 0–2.5 V coarse sweep, reducing measurement time while covering the expected permittivity-induced shift range.
 
-#### 7.3.3 Ergebnisberechnung
+#### 7.3.3 Result Calculation
 
 - `frequency_shift = vertex − calib.air_dac_freq_voltage`
 - `epsilon_real`, `epsilon_imag` filled by `Math_CalculateEpsilon()` (see Chapter 9).
 - `snow_density = 0.3 + frequency_shift × 0.1` (placeholder linear model).
 
-### 7.4 Sampling-Funktion (`sample_at`)
+### 7.4 Sampling Function (`sample_at`)
 
 ```c
 static float sample_at(float freq_voltage, float q_voltage,
@@ -599,7 +828,7 @@ static float sample_at(float freq_voltage, float q_voltage,
 
 Sets gain → frequency varicap → Q varicap via BSP, reads amplitude via `BSP_RF_ReadAmplitude()`, logs the point via `RF_Trace_Add()`, and returns the amplitude (also written to `*out_amp` if non-NULL).
 
-### 7.5 Konfigurierbare Parameter (Sweep-Bereich, Schrittweiten)
+### 7.5 Configurable Parameters (Sweep Range, Step Sizes)
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
@@ -612,7 +841,7 @@ Sets gain → frequency varicap → Q varicap via BSP, reads amplitude via `BSP_
 | `DEFAULT_GAIN_INDEX` | 1 | RF gain setting (0–3) |
 | Measurement window | ±0.2 V | Search range around calibration point |
 
-### 7.6 Fehlerbehandlung (ungültige Messungen)
+### 7.6 Error Handling (Invalid Measurements)
 
 | Condition | Handling |
 |-----------|----------|
@@ -629,11 +858,11 @@ All events are logged under domains `"RF_CAL"` or `"RF_MEAS"` via `Debug_LogDriv
 
 ## 8. RF Trace (`rf_trace.c`)
 
-### 8.1 Zweck (Sweep-Daten-Aufzeichnung)
+### 8.1 Purpose (Sweep Data Recording)
 
 Records voltage/amplitude sample pairs during calibration and measurement sweeps so they can be dumped to the host for visualisation and debugging. The trace buffer is filled automatically by `sample_at()` in `rf_measure.c` and read out via `CMD:TRACE`.
 
-### 8.2 Bereitgestellte Funktionen
+### 8.2 Provided Functions
 
 | Function | Description |
 |----------|-------------|
@@ -655,7 +884,7 @@ typedef struct { float voltage; float amplitude; } RFTraceSample_t;
 
 Buffer depth: `RF_TRACE_MAX_SAMPLES = 128`.
 
-### 8.3 Datenformat und Ausgabe (`DAT:TRACE:*`)
+### 8.3 Data Format and Output (`DAT:TRACE:*`)
 
 When the host sends `CMD:TRACE`, `bt_manager.c` calls `RF_Trace_Copy()` and emits one line per sample:
 
@@ -665,7 +894,7 @@ DAT:TRACE:<mode>:<index>:V:<voltage>:A:<amplitude>
 
 where `<mode>` is `CAL` or `MEAS`, `<index>` is 0-based, and voltage/amplitude are formatted as floats.
 
-### 8.4 Nutzung zur Diagnose
+### 8.4 Diagnostic Use
 
 - Plot the sweep curve on the PC to verify the parabolic shape and confirm the minimum location.
 - Compare calibration and measurement traces to visualise the resonance shift.
@@ -673,13 +902,13 @@ where `<mode>` is `CAL` or `MEAS`, `<index>` is 0-based, and voltage/amplitude a
 
 ---
 
-## 9. Mathematisches Modell (`math_model.c`)
+## 9. Mathematical Model (`math_model.c`)
 
-### 9.1 Zweck und Verantwortlichkeit
+### 9.1 Purpose and Responsibility
 
 Provides the physical conversion from DAC varicap voltages to electrical parameters (capacitance, permittivity). Called by `rf_measure.c` after the sweep to translate the observed voltage shift into material properties.
 
-### 9.2 Permittivitätsberechnung
+### 9.2 Permittivity Calculation
 
 ```c
 void Math_CalculateEpsilon(float v_air, float v_snow,
@@ -703,21 +932,21 @@ LUT (abridged):
 | 2.00 | 48 |
 | 2.50 | 39 |
 
-### 9.3 Signalverarbeitung (Undersampling / Bandpass Sampling)
+### 9.3 Signal Processing (Undersampling / Bandpass Sampling)
 
-#### 9.3.1 Prinzip des Undersamplings
+#### 9.3.1 Undersampling Principle
 
 The RF signal is at 20 MHz, well above the STM32 ADC Nyquist limit (~5 Msps). Bandpass sampling deliberately violates the baseband Nyquist criterion: choosing a sampling rate f_s such that the 20 MHz signal aliases to a low IF frequency f_IF that the ADC can resolve.
 
-#### 9.3.2 Alias-Frequenz-Berechnung
+#### 9.3.2 Alias Frequency Calculation
 
 `f_IF = |20 MHz − N × f_s|` where N is the nearest integer multiple. For example, f_s ≈ 800.1 kHz aliases 20 MHz to ~2.5 kHz.
 
-#### 9.3.3 DFT/Goertzel-Algorithmus (geplant)
+#### 9.3.3 DFT/Goertzel Algorithm (planned)
 
 Not yet implemented. The planned approach: capture a DMA buffer of ~256 ADC samples and compute the magnitude at f_IF using a single-bin Goertzel algorithm. This will replace the current single-point `BSP_RF_ReadAmplitude()` call and improve noise rejection significantly.
 
-### 9.4 Fehlerbetrachtung und Genauigkeit
+### 9.4 Accuracy Considerations
 
 - **LUT resolution**: 11 points over 2.5 V → 0.25 V spacing; linear interpolation introduces ≤ ~2 % error between nodes given the monotonic C(V) curve.
 - **ε' model**: The current formula (`1.0 + 0.5 × C_air/C_snow`) is a simplified placeholder. A full electromagnetic model is required for production accuracy.
@@ -726,13 +955,13 @@ Not yet implemented. The planned approach: capture a DMA buffer of ~256 ADC samp
 
 ---
 
-## 10. Debug-Logging (`debug_log.c`)
+## 10. Debug Logging (`debug_log.c`)
 
-### 10.1 Zweck (interner Ringpuffer für Diagnose)
+### 10.1 Purpose (Internal Ring Buffer for Diagnostics)
 
 Centralised logging facility used by the FSM, event handlers, and driver layers. Entries are stored in the mock board's 32-deep circular buffer and can be retrieved via `CMD:LOG`.
 
-### 10.2 Bereitgestellte Funktionen
+### 10.2 Provided Functions
 
 | Function | Description |
 |----------|-------------|
@@ -753,7 +982,7 @@ typedef struct {
 } DebugLogEntry_t;
 ```
 
-### 10.3 Log-Domänen und Filterung
+### 10.3 Log Domains and Filtering
 
 | Domain | Enum | Producers |
 |--------|------|-----------|
@@ -763,7 +992,7 @@ typedef struct {
 
 State names in log output: `INIT`, `IDLE`, `MAN`, `CAL`, `MEAS`, `CALC`, `ERR` (mapped by internal `state_to_string()`).
 
-### 10.4 Ausgabe über `CMD:LOG`
+### 10.4 Output via `CMD:LOG`
 
 When the host sends `CMD:LOG`, the protocol parser calls `Debug_LogCopy()` and emits one line per entry:
 
@@ -775,9 +1004,9 @@ where `<domain>` is `STATE` / `EVENT` / `DRIVER` and `<state>` is the short stat
 
 ---
 
-## 11. Kommunikationsschicht – Protokoll und Transport
+## 11. Communication Layer – Protocol and Transport
 
-### 11.1 Überblick (ASCII-Protokoll)
+### 11.1 Overview (ASCII Protocol)
 
 All host ↔ firmware communication uses newline-terminated ASCII frames over USART2 (USB VCP). Three frame prefixes define the direction and purpose:
 
@@ -789,9 +1018,9 @@ All host ↔ firmware communication uses newline-terminated ASCII frames over US
 
 An additional sub-prefix `STAT:HW:*` carries structured push-style hardware state frames for GUI updates.
 
-### 11.2 BT-Manager / Protokoll-Parser (`bt_manager.c`)
+### 11.2 BT Manager / Protocol Parser (`bt_manager.c`)
 
-#### 11.2.1 Zweck und Verantwortlichkeit
+#### 11.2.1 Purpose and Responsibility
 
 Central command parser and event dispatcher. Receives complete lines from the transport layer, matches command prefixes, routes to the appropriate handler, and emits `STAT:*` / `DAT:*` responses. Also maintains a BT event queue consumed by the FSM.
 
@@ -807,7 +1036,7 @@ Public API:
 | `BT_SetManualMode(uint8_t en)` | Enable/disable manual-mode gate. |
 | `BT_IsManualMode(void)` | Query manual-mode flag. |
 
-#### 11.2.2 Protokollstruktur (`CMD:*`, `STAT:*`, `DAT:*`)
+#### 11.2.2 Protocol Structure (`CMD:*`, `STAT:*`, `DAT:*`)
 
 Response examples:
 
@@ -820,11 +1049,11 @@ DAT:LOG:D:STATE:S:IDLE:FSM:IDLE→CAL      (debug log entry)
 DAT:LCD:L0:IDLE                           (LCD line content)
 ```
 
-#### 11.2.3 Befehlsverarbeitung (`BT_ProcessIncoming`)
+#### 11.2.3 Command Processing (`BT_ProcessIncoming`)
 
 The function performs prefix matching on the incoming line and routes to the first matching handler. Matching is by exact character count or `strncmp`.
 
-#### 11.2.4 Befehlsrouting und Dispatch
+#### 11.2.4 Command Routing and Dispatch
 
 | Prefix | Handler | Action |
 |--------|---------|--------|
@@ -845,13 +1074,13 @@ The function performs prefix matching on the incoming line and routes to the fir
 
 HAL sub-commands cover: `LED:SET/GET/TOGGLE`, `ADC:READ/RAW`, `DAC:SET/RAW`, `GAIN:SET/GET`, `BTN:READ`, `LCD:SET`, `PWM:START/STOP/GET/FREQ/DUTY`, `NINA:RST/STOP`, `INIT`. Invalid sub-commands return `STAT:HAL_CMD_ERR`.
 
-#### 11.2.5 Antwortgenerierung (`BT_Send`, `BT_Printf`)
+#### 11.2.5 Response Generation (`BT_Send`, `BT_Printf`)
 
 - `BT_SendStatus(tag)` → formats `"STAT:<tag>"` and calls `PC_HostBridge_Send()`.
 - `BT_SendResult(result)` → formats `"DAT:RES:ER:<ε_r>:EI:<ε_i>:DENS:<ρ>"` using `fmt_fixed_3()` (3 decimal places).
 - `output_hw_framef(fmt, …)` → formats `"STAT:HW:<payload>"` (max 96 bytes) for push-style hardware state updates.
 
-#### 11.2.6 Integration mit FSM (Event-Weiterleitung)
+#### 11.2.6 FSM Integration (Event Forwarding)
 
 BT event queue: 8-deep circular buffer (`BT_EVENT_QUEUE_SIZE = 8`). On overflow the oldest event is dropped. The FSM drains this queue each `FSM_RunOnce()` cycle via `BT_PopEvent()`.
 
@@ -866,17 +1095,17 @@ typedef enum {
 } BT_Event_t;
 ```
 
-#### 11.2.7 Integration mit HAL Board (CMD:HAL:\*-Routing)
+#### 11.2.7 HAL Board Integration (CMD:HAL:\* Routing)
 
 All `CMD:HAL:*` commands are rejected with `STAT:HAL_LOCKED` unless the FSM is in `STATE_MANUAL_OPERATION` (checked via `BT_IsManualMode()`). On success each handler emits both a legacy `STAT:HAL_*` acknowledgement **and** a structured `STAT:HW:*` push frame so the PC GUI can update immediately.
 
-#### 11.2.8 Integration mit Mock Board (CMD:MOCK:\*-Routing)
+#### 11.2.8 Mock Board Integration (CMD:MOCK:\* Routing)
 
 `handle_mock_command()` parses the sub-command after `CMD:MOCK:` and calls the corresponding `BSP_RF_Mock*` wrapper. Invalid payloads return `STAT:MOCK_ERR`. See Chapter 4.4 for the full command table.
 
 ### 11.3 USB CDC Bridge / USART2 Transport (`usb_cdc_bridge.c`)
 
-#### 11.3.1 Zweck (Zeilenweise Empfangs-/Sendeschnittstelle)
+#### 11.3.1 Purpose (Line-Based RX/TX Interface)
 
 Manages USART2 RX and TX. Receives raw bytes from the UART peripheral, assembles them into newline-terminated lines, queues them, and hands complete lines to `BT_ProcessIncoming()`. Sends response strings with automatic newline appending.
 
@@ -889,13 +1118,13 @@ Public API:
 | `PC_HostBridge_Send(const char *str)` | Transmit a string on USART2 (appends `\n` if missing). |
 | `PC_HostBridge_Poll(void)` | Main-loop call: poll RX (if polling mode), assemble lines, drain line queue → `BT_ProcessIncoming()`. |
 
-#### 11.3.2 DMA Receive-to-Idle (bevorzugt)
+#### 11.3.2 DMA Receive-to-Idle (preferred)
 
 Preferred mode when `hdmarx != NULL` and the system clock is not in fallback. Uses `HAL_UARTEx_ReceiveToIdle_DMA()` with a 256-byte DMA buffer. The half-transfer interrupt is disabled to reduce overhead. On idle-line detection the ISR copies received bytes into a shadow buffer, **re-arms the DMA immediately** (minimising dead time), then pushes the copied bytes into the byte ring.
 
 Boot status: `STAT:UART_RX:DMA_IDLE`.
 
-#### 11.3.3 Interrupt-basierter RX (Fallback)
+#### 11.3.3 Interrupt-Based RX (Fallback)
 
 If no DMA channel is available but the clock is stable, `HAL_UARTEx_ReceiveToIdle_IT()` is used with the same 256-byte buffer and identical re-arm-then-process strategy.
 
@@ -907,17 +1136,17 @@ Activated only when `g_clock_fallback_active` is set **and** no RX DMA is availa
 
 Boot status: `STAT:UART_RX:POLL`.
 
-#### 11.3.5 RX-Byte-Ringpuffer
+#### 11.3.5 RX Byte Ring Buffer
 
 512-byte circular buffer (`RX_BYTE_RING_SIZE = 512`). ISR writes via `rx_ring_push_byte()`; main loop reads via `rx_ring_pop_byte()`. On overflow the oldest byte is dropped and `"rxring_ovf"` is logged.
 
-#### 11.3.6 RX-Line-Queue (zeilenweise Verarbeitung)
+#### 11.3.6 RX Line Queue (Line-Based Processing)
 
 32-entry queue of 128-byte strings (`RX_LINE_QUEUE_SIZE = 32`). `PC_HostBridge_Poll()` pops bytes from the ring, appends to a 128-byte working buffer until `\n` or `\r` is seen, then enqueues the complete line. On queue overflow the oldest line is dropped (`"rxq_ovf"` logged). Lines exceeding 127 characters are truncated and logged as `"overflow"`.
 
 After assembly, the poll function drains up to 32 lines per call and passes each to `BT_ProcessIncoming()`.
 
-#### 11.3.7 TX-Ausgabe
+#### 11.3.7 TX Output
 
 `PC_HostBridge_Send()` copies up to 158 bytes into a 160-byte local buffer, appends `\n` if not already present, and calls `HAL_UART_Transmit()` with a 200 ms timeout. TX failures are logged as `"tx_fail"`.
 
@@ -932,21 +1161,21 @@ Buffer sizes summary:
 | TX output buffer | 160 B | UART transmit formatting |
 | BT event queue | 8 entries | Command → FSM event bridge |
 
-### 11.4 Bluetooth-Kommunikation (`bt_communication.c`) (geplant)
+### 11.4 Bluetooth Communication (`bt_communication.c`) (planned)
 
-#### 11.4.1 UART4 / NINA-Modul
+#### 11.4.1 UART4 / NINA Module
 
 The NINA Bluetooth module is connected via UART4 (PA0 TX / PA1 RX). Hardware control pins (`NINA:RST`, `NINA:STOP`) are accessible through `CMD:HAL:NINA:*` in manual mode. The UART4 peripheral is initialised by CubeMX but **no firmware RX/TX logic is implemented yet**.
 
-#### 11.4.2 Geplante Integration in den Protokoll-Parser
+#### 11.4.2 Planned Integration into Protocol Parser
 
 The planned approach mirrors the USB path: a second `HostBridge` instance for UART4 with its own byte ring and line queue, feeding received lines into the same `BT_ProcessIncoming()` parser. Responses would be echoed to both transports so the PC and Bluetooth app see identical output. This is tracked as a development TODO (see Chapter 17).
 
 ---
 
-## 12. Hauptprogramm und Initialisierung (`main.c`)
+## 12. Main Program and Initialisation (`main.c`)
 
-### 12.1 Boot-Sequenz
+### 12.1 Boot Sequence
 
 Initialisation runs top-to-bottom before entering the infinite loop:
 
@@ -971,11 +1200,11 @@ Initialisation runs top-to-bottom before entering the infinite loop:
 
 After step 16 the firmware enters the main loop.
 
-### 12.2 Systemtakt-Konfiguration (HSE / MSI Fallback)
+### 12.2 System Clock Configuration (HSE / MSI Fallback)
 
 | Parameter | Normal | Fallback |
 |-----------|--------|----------|
-| Source | HSE 8 MHz + PLL | MSI 4 MHz |
+| Source | HSE 20 MHz + PLL | MSI 4 MHz |
 | SYSCLK | 64 MHz | 4 MHz |
 | Flash latency | 4 WS | 0 WS |
 | PLL M / N / R | 2 / 16 / 2 | — (PLL off) |
@@ -985,7 +1214,7 @@ After step 16 the firmware enters the main loop.
 
 **Clock Security System (CSS)**: enabled on the normal path via `HAL_RCC_EnableCSS()`. If HSE is lost at runtime, an NMI fires and the handler sets `g_clock_fallback_active = 1` and turns on `LED_ERR` — the device keeps running on the internal oscillator.
 
-### 12.3 Peripherie-Initialisierung
+### 12.3 Peripheral Initialisation
 
 Key peripheral parameters:
 
@@ -1001,7 +1230,7 @@ Key peripheral parameters:
 | **DMA1** | 5 channels: ADC, DAC×2, USART2 RX/TX | All priority 0 |
 | **GPIO** | 4 LED outputs, 1 button input (EXTI falling), 2 gain-select, NINA control, MCO on PA8 | — |
 
-### 12.4 Hauptschleife (Event-Loop)
+### 12.4 Main Loop (Event Loop)
 
 ```c
 while (1) {
@@ -1014,7 +1243,7 @@ The loop is purely polling-based with no sleep modes. Each `FSM_RunOnce()` call 
 
 The watchdog timeout (~33 s) is generous enough to tolerate a full coarse + fine sweep without resetting.
 
-### 12.5 Reset-Ursachen-Erkennung
+### 12.5 Reset Cause Detection
 
 On boot the firmware reads `RCC->CSR` reset flags, formats a human-readable cause string, and sends it as `STAT:RESET_CAUSE:<flags>`. Recognised flags:
 
@@ -1035,7 +1264,7 @@ Fault handlers (`HardFault`, `MemManage`, `BusFault`, `UsageFault`) turn on `LED
 
 ## 13. Tests
 
-### 13.1 Überblick der Teststrategie
+### 13.1 Test Strategy Overview
 
 Testing is split into three levels:
 
@@ -1047,7 +1276,7 @@ Testing is split into three levels:
 
 All three levels use the mock board (Ch. 4) as the simulation backend. No CI pipeline is configured — tests are run manually.
 
-### 13.2 Unit-Tests
+### 13.2 Unit Tests
 
 #### 13.2.1 Test HAL DAC (`test_hal_dac.c`)
 
@@ -1058,7 +1287,7 @@ DAC_StatusTypeDef Test_HL_DAC_RunAll(DAC_HandleTypeDef *hdac);
 void Test_HL_DAC_GenerateWaveform(DAC_HandleTypeDef *hdac, IWDG_HandleTypeDef *hiwdg);
 ```
 
-#### 13.2.2 Weitere Unit-Tests
+#### 13.2.2 Additional Unit Tests
 
 `tests/test_main.c` — desktop C tests built with CMake (`-DUNIT_TESTS=1`). Links the core firmware modules (FSM, BT manager, BSP, RF measure, math model) against the mock board and runs on the PC without hardware.
 
@@ -1080,7 +1309,7 @@ Build and run:
 cd tests && cmake -B build && cmake --build build && ctest --output-on-failure
 ```
 
-### 13.3 Integrationstests
+### 13.3 Integration Tests
 
 Python-based tests in `tools/tests/`, executed via pytest.
 
@@ -1102,7 +1331,7 @@ pytest tools/tests/ --port COM6 -m hardware -v      # live
 pytest tools/tests/test_serial_lifecycle.py -v        # offline
 ```
 
-### 13.4 PC-basierte Lifecycle-Tests (`tools/`)
+### 13.4 PC-Based Lifecycle Tests (`tools/`)
 
 #### 13.4.1 PC CLI (`pc_cli.py`)
 
@@ -1122,7 +1351,7 @@ python tools/run_hw_lifecycle.py --port COM7
 python tools/run_hw_lifecycle.py --port COM7 --scenario fail
 ```
 
-#### 13.4.3 PySimpleGUI Desktop-Tool
+#### 13.4.3 PySimpleGUI Desktop Tool
 
 `tools/pc_ui.py` — graphical debug panel with LED indicators, LCD mirror, DAC/ADC sliders, PWM controls, button simulation, gain selection, NINA module control, manual-mode toggle, and RF mock parameter injection. Updates from `STAT:HW:*` push frames.
 
@@ -1130,7 +1359,7 @@ python tools/run_hw_lifecycle.py --port COM7 --scenario fail
 python tools/pc_ui.py --port COM4
 ```
 
-### 13.5 Mock-basiertes Testen
+### 13.5 Mock-Based Testing
 
 The mock board (Ch. 4) is the enabler for all non-hardware tests. It provides:
 
@@ -1156,9 +1385,9 @@ Test coverage summary:
 
 ---
 
-## 14. PC-Tools und externe Schnittstellen (`tools/`)
+## 14. PC Tools and External Interfaces (`tools/`)
 
-### 14.1 Überblick
+### 14.1 Overview
 
 Three Python tools communicate with the firmware via the ASCII `CMD:*` / `STAT:*` / `DAT:*` protocol over USB CDC (ST-LINK VCP) at 115200 8N1:
 
@@ -1190,7 +1419,7 @@ Dependencies: `pyserial ≥ 3.5`, `PySimpleGUI ≥ 4.60` (GUI only), `pytest ≥
 
 ### 14.2 PC CLI (`pc_cli.py`)
 
-#### 14.2.1 Funktionalität
+#### 14.2.1 Functionality
 
 Interactive REPL with prompt `snow>`. Maps short-hand commands to firmware frames:
 
@@ -1225,7 +1454,7 @@ HAL commands (require manual mode):
 
 Supports batch scripts: one command per line, `#` comments, `wait [<s>]` for delays.
 
-#### 14.2.2 Verwendung
+#### 14.2.2 Usage
 
 ```bash
 python tools/pc_cli.py --port COM7                             # interactive
@@ -1236,9 +1465,9 @@ python tools/pc_cli.py --port loop://                          # loopback (no HW
 
 Arguments: `--port`, `--baud` (115200), `--timeout` (0.2), `--script`, `--delay` (0.25), `--script-only`.
 
-### 14.3 GUI-Tool (PySimpleGUI)
+### 14.3 GUI Tool (PySimpleGUI)
 
-#### 14.3.1 Funktionalität
+#### 14.3.1 Functionality
 
 Full-featured desktop panel with the following control groups:
 
@@ -1260,14 +1489,14 @@ Full-featured desktop panel with the following control groups:
 
 The GUI parses incoming `STAT:HW:*` push frames to update all indicators in real time (LED colours, DAC voltage feedback, PWM state, etc.). An optional auto-refresh timer polls `CMD:LEDS` and `CMD:LCD` at a configurable interval.
 
-#### 14.3.2 Verwendung
+#### 14.3.2 Usage
 
 ```bash
 python tools/pc_ui.py --port COM4
 python tools/pc_ui.py --port COM4 --baud 115200
 ```
 
-### 14.4 Test-Skripte
+### 14.4 Test Scripts
 
 `run_hw_lifecycle.py` — automated smoke test. See Chapter 13.4.2 for details.
 
@@ -1282,9 +1511,9 @@ Additional test data in `tools/testdata/`:
 
 ---
 
-## 15. Befehlsreferenz (Kommandoprotokoll)
+## 15. Command Reference (Protocol)
 
-### 15.1 Allgemeine Konventionen (Zeilenende, Encoding)
+### 15.1 General Conventions (Line Ending, Encoding)
 
 - **Encoding**: ASCII, 7-bit clean.
 - **Line termination**: `\n` or `\r\n`. Firmware strips both.
@@ -1292,7 +1521,7 @@ Additional test data in `tools/testdata/`:
 - **Transport**: USART2 at 115200 8N1 (USB VCP). Same protocol planned for UART4 (Bluetooth).
 - **Direction**: `CMD:*` host → device, `STAT:*` / `DAT:*` device → host.
 
-### 15.2 Kontrollbefehle (`CMD:CONN`, `CMD:RESET`, `CMD:CAL`, `CMD:MEAS`, `CMD:BTN:*`)
+### 15.2 Control Commands (`CMD:CONN`, `CMD:RESET`, `CMD:CAL`, `CMD:MEAS`, `CMD:BTN:*`)
 
 | Command | Response | Description |
 |---------|----------|-------------|
@@ -1303,7 +1532,7 @@ Additional test data in `tools/testdata/`:
 | `CMD:BTN:PRESS` | `STAT:BTN_PRESS` | Simulate button press. |
 | `CMD:BTN:RELEASE` | `STAT:BTN_REL` | Simulate button release. |
 
-### 15.3 Debug- und Status-Befehle (`CMD:LEDS`, `CMD:LCD`, `CMD:LOG`, `CMD:TRACE`)
+### 15.3 Debug and Status Commands (`CMD:LEDS`, `CMD:LCD`, `CMD:LOG`, `CMD:TRACE`)
 
 | Command | Response format | Description |
 |---------|-----------------|-------------|
@@ -1312,7 +1541,7 @@ Additional test data in `tools/testdata/`:
 | `CMD:LOG` | `DAT:LOG:D:<domain>:S:<state>:<msg>` per entry | Debug ring buffer dump. `STAT:LOG_EMPTY` if empty. |
 | `CMD:TRACE` | `DAT:TRACE:<mode>:<idx>:V:<volt>:A:<amp>` per sample | Last RF sweep trace. `STAT:TRACE_EMPTY` if empty. |
 
-### 15.4 Mock-Befehle (`CMD:MOCK:RF:*`)
+### 15.4 Mock Commands (`CMD:MOCK:RF:*`)
 
 | Command | Response | Default | Description |
 |---------|----------|---------|-------------|
@@ -1324,7 +1553,7 @@ Additional test data in `tools/testdata/`:
 
 Invalid mock commands return `STAT:MOCK_ERR`.
 
-### 15.5 HAL-Board-Befehle (`CMD:HAL:*`)
+### 15.5 HAL Board Commands (`CMD:HAL:*`)
 
 All `CMD:HAL:*` commands are **locked** unless manual mode is active (see 15.6). Returns `STAT:HAL_LOCKED` when locked. Invalid sub-commands return `STAT:HAL_CMD_ERR`.
 
@@ -1360,7 +1589,7 @@ Successful commands emit both a legacy `STAT:HAL_*` acknowledgement and a struct
 | `CMD:HAL:NINA:RST:<0/1>` | `STAT:HAL_NINA:RESET/RUN` | 0 = hold reset, 1 = run. |
 | `CMD:HAL:NINA:STOP:<0/1>` | `STAT:HAL_NINA:RUNNING/STOPPED` | 0 = run, 1 = stop. |
 
-### 15.6 Manual-Mode-Befehle (`CMD:MANUAL:*`)
+### 15.6 Manual-Mode Commands (`CMD:MANUAL:*`)
 
 | Command | Response | Description |
 |---------|----------|-------------|
@@ -1369,7 +1598,7 @@ Successful commands emit both a legacy `STAT:HAL_*` acknowledgement and a struct
 
 While manual mode is active: `CMD:CAL` / `CMD:MEAS` → `STAT:MANUAL_ACTIVE` (rejected).
 
-### 15.7 Antwortformate (`STAT:*`, `DAT:*`)
+### 15.7 Response Formats (`STAT:*`, `DAT:*`)
 
 **Status frames** (`STAT:*`):
 
@@ -1406,9 +1635,9 @@ While manual mode is active: `CMD:CAL` / `CMD:MEAS` → `STAT:MANUAL_ACTIVE` (re
 
 ---
 
-## 16. Konfiguration und Build
+## 16. Configuration and Build
 
-### 16.1 Projektstruktur (Verzeichnisse und Dateien)
+### 16.1 Project Structure (Directories and Files)
 
 ```
 Permittivity-Meter/
@@ -1436,7 +1665,7 @@ Permittivity-Meter/
 └── NINA software von okorn/        Legacy BT module code (not part of V2)
 ```
 
-### 16.2 Build-Umgebung und Toolchain
+### 16.2 Build Environment and Toolchain
 
 | Component | Details |
 |-----------|---------|
@@ -1448,7 +1677,7 @@ Permittivity-Meter/
 | Debugger | ST-LINK (integrated on Nucleo) |
 | Unit tests | CMake + GCC on host PC |
 
-### 16.3 Compiler-Flags und Defines
+### 16.3 Compiler Flags and Defines
 
 Firmware defines:
 
@@ -1465,7 +1694,7 @@ Unit test defines:
 |--------|---------|
 | `UNIT_TESTS=1` | Replace HAL calls with mock stubs; enables host-side compilation |
 
-### 16.4 Linker-Konfiguration
+### 16.4 Linker Configuration
 
 Memory regions (`STM32L476RGTX_FLASH.ld`):
 
@@ -1479,7 +1708,7 @@ Stack: 1 KB (`_Min_Stack_Size = 0x400`). Heap: 512 B (`_Min_Heap_Size = 0x200`).
 
 Key sections: `.isr_vector` → FLASH (interrupt vectors), `.text` → FLASH, `.rodata` → FLASH, `.data` → RAM (initialised from FLASH), `.bss` → RAM.
 
-### 16.5 Abhängigkeiten (STM32 HAL, CMSIS)
+### 16.5 Dependencies (STM32 HAL, CMSIS)
 
 | Library | Version | Source |
 |---------|---------|--------|
@@ -1492,9 +1721,9 @@ Key sections: `.isr_vector` → FLASH (interrupt vectors), `.text` → FLASH, `.
 
 ---
 
-## 17. Bekannte Einschränkungen und offene Punkte
+## 17. Known Limitations and Open Issues
 
-### 17.1 Aktuelle Limitierungen
+### 17.1 Current Limitations
 
 | Limitation | Impact | Workaround |
 |------------|--------|------------|
@@ -1508,7 +1737,7 @@ Key sections: `.isr_vector` → FLASH (interrupt vectors), `.text` → FLASH, `.
 | No `CMD:RF:STAT` readback | Cannot query instantaneous RF state | Infer from `CMD:TRACE` or `CMD:LEDS` |
 | `CMD:HAL:*` implemented but not fully tested | May have edge-case issues | Test coverage in `test_hw_command_surface.py` |
 
-### 17.2 Geplante Erweiterungen
+### 17.2 Planned Extensions
 
 **Phase 1 — Hardware prerequisites** (blocking):
 - [ ] Add OpAmp buffer/divider after PA9 (3.3 V → 1 Vpp)
@@ -1540,7 +1769,7 @@ Key sections: `.isr_vector` → FLASH (interrupt vectors), `.text` → FLASH, `.
 - [ ] Battery input + regulator design
 - [ ] Define final "Permittivity Shield v1.0" pinout
 
-### 17.3 Offene To-Dos (siehe ToDos.md / Milestones.md)
+### 17.3 Open TODOs (see ToDos.md / Milestones.md)
 
 No `TODO` or `FIXME` comments remain in the active V2 source code (`Core/`). All tracked development items are maintained in `ToDos.md` and `Milestones.md` at the repository root.
 
