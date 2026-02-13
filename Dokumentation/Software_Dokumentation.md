@@ -324,7 +324,7 @@ The current implementation is **buffer-only** — no I2C transactions are perfor
 ### 6.1 Überblick und Verantwortlichkeit
 
 The FSM is the central coordinator of the firmware. It owns the application lifecycle — initialisation, calibration, measurement, result display, manual override, and error recovery. It consumes events from the button and the BT protocol parser, drives BSP outputs (LEDs, LCD, RF enable), and delegates measurement work to `rf_measure.c`.
-
+C
 Public API:
 
 | Function | Description |
@@ -334,6 +334,7 @@ Public API:
 | `FSM_RunOnce(void)` | Execute one FSM cycle (poll button, drain BT events, process queue, run state handler). |
 | `FSM_GetState(void)` | Return current `AppState_t`. |
 
+Todo Change Pictures
 ### 6.2 Zustandsdiagramm
 
 ```
