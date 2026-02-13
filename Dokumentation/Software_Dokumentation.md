@@ -167,6 +167,55 @@ The system is controlled via an ASCII command protocol (`CMD:*` / `STAT:*` / `DA
 | **HAL Drivers** | `hl/hal_gpio.c`, `hl/hal_dac.c`, `hl/hal_adc.c`, `hl/hal_pwm.c` | Thin wrappers around STM32 HAL for GPIO, DAC, ADC, PWM |
 | **Vendor HAL** | `Drivers/STM32L4xx_HAL_Driver/`, CMSIS | ST-provided HAL library and CMSIS core (CubeMX generated) |
 
+### 2.5 Clock and Oscillator Configuration
+
+#### 2.5.1 System Clock Requirements
+
+The permittivity meter relies on precise, stable timing for both RF signal generation (20 MHz PWM) and high-frequency undersampling (122.5 kHz ADC trigger). Phase jitter in the system clock directly impacts measurement accuracy by degrading the Signal-to-Noise Ratio (SNR) of the permittivity calculations.
+
+The STM32L476RG supports multiple clock sources:
+- **HSI (High-Speed Internal)**: 16 MHz RC oscillator (can be boosted via PLL)
+- **HSE (High-Speed External)**: 20 MHz crystal oscillator
+- **MSI (Multi-Speed Internal)**: Variable-frequency RC oscillator (fallback mode)
+
+#### 2.5.2 Quartz Stability Testing (HSE vs. HSI Comparison)
+
+To ensure measurement coherence, a comparative jitter analysis was performed between the HSI and HSE clock sources. The HSI (16 MHz) was configured with a PLL multiplier to match the 20 MHz HSE frequency, enabling direct comparison.
+
+**Test Setup:**
+- Pin PC8 was configured in MCO (Microcontroller Clock Output) mode
+- External oscilloscope measurement of phase jitter
+- Both configurations set to 20 MHz output frequency
+
+**Results:**
+
+| Clock Source | RMS Jitter | Relative Stability |
+|--------------|------------|-------------------|
+| **HSE (20 MHz External Crystal)** | ~4.5 ps | **Baseline (1x)** |
+| **HSI (16 MHz RC + PLL)** | ~18 ps | **4× worse** |
+
+**Conclusion:** The external crystal (HSE) provides approximately **4× better stability** (lower RMS jitter) compared to the internal RC oscillator, even when the HSI is PLL-boosted to match the target frequency. This reduction in jitter is **critical** for coherent undersampling and directly improves measurement SNR.
+
+**Design Decision:** The HSE is **mandated** as the system clock source. The MSI is configured only as a fallback in case of HSE failure (Clock Security System detection).
+
+#### 2.5.3 Clock Tree Configuration
+
+The system operates at **80 MHz** (main system clock) derived from the 20 MHz HSE:
+
+```
+HSE (20 MHz) → PLL × 4 → 80 MHz SYSCLK
+  ├─→ APB1 (40 MHz) → Timer peripherals (TIM2, TIM6)
+  ├─→ APB2 (80 MHz) → ADC, USART1
+  └─→ AHB  (80 MHz) → Core, DMA, GPIO
+```
+
+**Key Peripheral Clocks:**
+- **TIM2 (PWM)**: 80 MHz timer clock
+- **TIM6 (ADC trigger)**: 80 MHz timer clock
+- **ADC1**: 80 MHz synchronous clock (not asynchronous kernel clock)
+
+See Section 12.2 for boot-time clock configuration code.
+
 ---
 
 ## 3. HAL Board Layer (`hl/hal_board.c`)
@@ -252,6 +301,61 @@ HalBoard_Status_t HalBoard_DAC_SetRaw(uint8_t channel, uint16_t raw_value);
 
 `channel` 0 = freq tuning (PA4, `DAC_CH_FREQ_TUNE`), 1 = Q-factor (PA5, `DAC_CH_Q_FACTOR`). Voltage range: 0.0–3.3 V. Raw range: 0–4095. Conversion: `raw = (voltage / 3.3) × 4095`. Delegates to `HL_DAC_SetVoltage()` / `HL_DAC_SetRawValue()`.
 
+##### DAC Technical Details
+
+The Digital-to-Analog Converter (DAC) acts as the bridge between the digital control logic and the analog measurement circuit. It drives the **varactor diodes (varicaps)** to tune the sensor's resonant frequency and adjusts the circuit **quality factor (Q-factor)**.
+
+**DAC1 Configuration:**
+
+| Feature | Parameter | Value / Description | Code Reference |
+|---------|-----------|---------------------|----------------|
+| **Hardware Instance** | Instance | DAC1 | `hdac1` |
+| **Resolution** | 12-bit | (Standard STM32 L4 DAC) | - |
+| **Electrical Limits** | Voltage Range | 0 V – 3.3 V | `DAC_VOLTAGE_REF` |
+| **Digital Limits** | Value Range | 0 – 4095 | `DAC_MAX_VALUE` |
+| **Channel 1** | GPIO Pin | PA4 | `FRQ_TN_Pin` |
+|  | Function | Frequency Tuning Voltage | `DAC_CH_FREQ_TUNE` |
+| **Channel 2** | GPIO Pin | PA5 | `Q_FACT_TN_Pin` |
+|  | Function | Q-Factor Control Voltage | `DAC_CH_Q_FACTOR` |
+
+**Voltage-to-Digital Conversion Formula:**
+
+The `HL_DAC_SetVoltage()` function in `Core/Src/hl/hal_dac.c` implements the voltage-to-raw conversion:
+
+```c
+/**
+ * @brief Set DAC output voltage for a specific channel
+ * @param channel: Target Channel (FREQ_TUNE or Q_FACTOR)
+ * @param voltage: Desired voltage (0.0V - 3.3V)
+ */
+DAC_StatusTypeDef HL_DAC_SetVoltage(DAC_ChannelTypeDef channel, float voltage)
+{
+    // 1. Safety Check
+    if (voltage < 0.0f || voltage > DAC_VOLTAGE_REF)
+    {
+        return DAC_ERROR_INVALID_PARAM;
+    }
+    
+    // 2. Convert voltage to 12-bit digital value
+    uint32_t raw_value = (uint32_t)((voltage / DAC_VOLTAGE_REF) * DAC_MAX_VALUE);
+    
+    // 3. Hardware Write
+    if (HAL_DAC_SetValue(hdac_local, channel, DAC_ALIGN_12B_R, raw_value) != HAL_OK)
+    {
+        return DAC_ERROR;
+    }
+    
+    return DAC_OK;
+}
+```
+
+The mapping is linear:
+- **0.0 V** → raw value **0**
+- **3.3 V** → raw value **4095**
+- **Step size**: 3.3 V / 4095 ≈ **0.806 mV per LSB**
+
+This resolution is sufficient for precise varicap tuning across the measurement frequency range.
+
 #### 3.3.4 ADC Read (`HalBoard_ADC_Read`, `HalBoard_ADC_ReadRaw`)
 
 ```c
@@ -263,6 +367,112 @@ bool              HalBoard_ADC_IsBufferReady(void);
 ADC1 runs **continuously** via TIM6 trigger + DMA circular mode with ping-pong 512-sample half-buffers (`ADC_DMA_BUFFER_SIZE = 1024`). `ReadSingle` averages the complete half-buffer (`sum / ADC_BUFFER_SIZE`). `ReadVoltage` converts: `(raw / 4095) × 3.3`. Returns `HAL_BOARD_ERROR_NOT_READY` if the DMA buffer is not yet complete. **Does not support blocking single conversions** (would conflict with DMA).
 
 Timer period: `80 MHz / 653 ≈ 122.5 kHz` sample rate.
+
+##### ADC Technical Details
+
+Signal acquisition is performed using `hal_adc.c`, implementing an **undersampling technique** to analyze high-frequency signals. Precise undersampling of the 20 MHz RF signal is achieved by driving the 12-bit ADC1 (channel 1, pin PC0) with a hardware-timed **122.5 kHz trigger** from TIM6, ensuring phase coherence and zero-jitter performance necessary for accurate measurement.
+
+###### Hardware-Triggered ADC Configuration
+
+A significant design challenge was enforcing strict timing control. The default STM32CubeMX initialization sets the ADC to "Software Trigger" and "Continuous Mode," which causes **sampling jitter** that destroys measurement accuracy.
+
+To resolve this, the `HL_ADC_Init` function in `Core/Src/hl/hal_adc.c` **explicitly overrides** the CubeMX configuration at runtime to force hardware timer triggering:
+
+```c
+/* Core/Src/hl/hal_adc.c */
+ADC_StatusTypeDef HL_ADC_Init(ADC_HandleTypeDef *hadc, TIM_HandleTypeDef *htim)
+{
+    // 1. Configure the Trigger Timer (TIM6)
+    // Target Frequency: 122.5 kHz (Derived from 80 MHz System Clock)
+    htim_trigger->Init.Prescaler = 0;
+    htim_trigger->Init.Period = 652;  // (80,000,000 / 122,500) - 1
+    
+    // ... Timer initialization ...
+    
+    // 2. CRITICAL: Override CubeMX default ADC configuration
+    // We disable continuous mode to ensure the ADC waits for the Timer Trigger
+    // before EVERY conversion. This locks the sampling measure to the clock.
+    hadc_local->Init.ContinuousConvMode = DISABLE;
+    hadc_local->Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO;
+    hadc_local->Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+    
+    if (HAL_ADC_Init(hadc_local) != HAL_OK)
+    {
+        return ADC_ERROR;
+    }
+    
+    return ADC_OK;
+}
+```
+
+**Key Configuration:**
+- **Trigger source**: TIM6 TRGO (Timer 6 Trigger Output)
+- **Sample rate**: 122.5 kHz (period = 652, prescaler = 0)
+- **Continuous mode**: **DISABLED** (forces wait for trigger)
+- **Trigger edge**: Rising edge
+
+###### DMA Ping-Pong Buffering Strategy
+
+The system uses a **"Ping-Pong" buffering strategy** to ensure zero dead time during acquisition. The DMA buffer size is **double** the processing length: `2 × ADC_BUFFER_SIZE = 2 × 512 = 1024 samples`.
+
+DMA completion callbacks update a pointer to the valid half of the buffer, allowing the application to **process one half while the ADC fills the other half**, ensuring no samples are missed:
+
+```c
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    // First half ready (samples 0 to 511)
+    ready_buffer_ptr = &dma_buffer[0];
+    buffer_ready_flag = true;
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+    // Second half ready (samples 512 to 1023)
+    ready_buffer_ptr = &dma_buffer[ADC_BUFFER_SIZE];
+    buffer_ready_flag = true;
+}
+```
+
+This mechanism allows the ADC to write conversion results directly into a RAM array (`dma_buffer`) in the background, completely **bypassing the CPU**. This ensures that no samples are missed due to CPU processing delays or interrupt latency.
+
+**Timing Validation:**
+
+With buffer size N = 1024 samples (configured as a double buffer of 512 × 2):
+
+```
+T_buf = N / f_s = 1024 / 122.5 kHz ≈ 0.00835918 s ≈ 8.359 ms
+T_toggle = 2 × T_buf = 2 × 8.359 ms ≈ 16.718 ms
+f_test = 1 / T_toggle = 1 / 0.016718 s ≈ 59.81 Hz
+```
+
+An oscilloscope measurement of a test signal toggled within `HAL_ADC_ConvCpltCallback` confirmed the measured frequency matches the theoretical calculation exactly, validating that the ADC samples precisely at 122.5 kHz with **zero drift**.
+
+###### Undersampling Theory and Alias Frequency
+
+The observed signal frequency of ~30.6 kHz is not random; it is the **precise mathematical result of undersampling**. The alias frequency (f_a) is calculated by finding the absolute difference between the signal frequency (f_sig = 20 MHz) and the nearest integer multiple N of the sampling rate (f_s = 122.5 kHz):
+
+```
+f_a = |f_sig - (N × f_s)|
+f_a = |20,000,000 - (163 × 122,511)|
+f_a = |20,000,000 - 19,969,293|
+f_a ≈ 30,707 Hz
+```
+
+Alternatively, for a perfect 4-cycle capture:
+
+```
+f_aliased = f_s / 4 = 122,511 Hz / 4 ≈ 30,627 Hz
+```
+
+This alias frequency is **intentional** and allows the STM32 to measure a 20 MHz signal using a much slower ADC, provided the sampling is **phase-coherent** (hardware-triggered).
+
+###### ADC Sampling Time (Aperture Setting)
+
+To validate the system's capability, a physical loopback test was performed: the PWM output pin (PA0, 20 MHz) was directly connected to the ADC input pin (PC0) using a short jumper wire (~2 cm). This isolated the signal path from external variables.
+
+**Critical Finding:** Reducing the ADC sampling time to the hardware minimum of **2.5 cycles** (`ADC_SAMPLETIME_2CYCLES_5`) eliminated signal averaging and validated 20 MHz undersampling. This fast aperture setting is **mandatory** for high-frequency signal capture.
+
+The captured data exhibited a clear **rail-to-rail signal** (High-Low-Low-High pattern) aliased to 30.6 kHz, definitively proving that the hardware bandwidth and sampling methodology are capable of detecting the 20 MHz wave with **high fidelity**.
 
 #### 3.3.5 PWM Control (`HalBoard_PWM_Start`, `HalBoard_PWM_Stop`, `HalBoard_PWM_SetFreq`, `HalBoard_PWM_SetDuty`)
 
@@ -278,6 +488,101 @@ bool              HAL_PWM_IsRunning(void);
 ```
 
 TIM1 CH2 on PA9. Timer clock: 80 MHz. Frequency formula: `f = 80 MHz / ((PSC + 1) × (ARR + 1))`. Period clamped to ≤ 65535. Pulse: `((ARR + 1) × duty) / 100`. Defaults: 20 MHz, 50 % duty. The PWM output is configured at boot but **not started** — the FSM controls excitation timing.
+
+##### PWM Technical Details
+
+The system generates a stable **20 MHz square wave excitation signal** via Pin PA0 (TIM2 Channel 1). The timer is driven by the 80 MHz system clock with a prescaler of 0 and a period of 3 (Pulse = 2), resulting in an effective **50% duty cycle** at the target frequency.
+
+###### Timer Configuration Algorithm
+
+The `PWM_Configure_Timer` function in `Core/Src/hl/hal_pwm.c` dynamically calculates the optimal prescaler and period values to achieve the desired frequency:
+
+```c
+/* Core/Src/hl/hal_pwm.c */
+static PWM_StatusTypeDef PWM_Configure_Timer(uint32_t frequency_hz, uint8_t duty_cycle)
+{
+    // ... validation checks ...
+    
+    uint32_t prescaler = 0;
+    uint32_t period = 0;
+    
+    // Try to find optimal prescaler and period values
+    // PWM_TIMER_CLOCK is 80 MHz (SYSCLK)
+    for (prescaler = 0; prescaler < 65536; prescaler++)
+    {
+        uint32_t timer_freq = PWM_TIMER_CLOCK / (prescaler + 1);
+        period = (timer_freq / frequency_hz) - 1;
+        
+        // Break if we find a valid period that fits in the 16/32-bit register
+        if (period <= 65535 && period > 0)
+        {
+            break;
+        }
+    }
+    
+    // Apply new configuration
+    htim_pwm->Init.Prescaler = prescaler;
+    htim_pwm->Init.Period = period;
+    
+    // Update hardware registers directly
+    __HAL_TIM_SET_PRESCALER(htim_pwm, prescaler);
+    __HAL_TIM_SET_AUTORELOAD(htim_pwm, period);
+    
+    // ... duty cycle calculation ...
+    
+    return PWM_OK;
+}
+```
+
+**Frequency Calculation:**
+
+The output frequency is determined by:
+
+```
+f_out = f_timer / ((Prescaler + 1) × (Period + 1))
+```
+
+For **20 MHz output** with **80 MHz timer clock**:
+
+```
+20 MHz = 80 MHz / ((0 + 1) × (Period + 1))
+Period + 1 = 80 MHz / 20 MHz = 4
+Period = 3
+```
+
+**Duty Cycle Calculation:**
+
+The pulse width (compare value) is calculated as:
+
+```
+Pulse = ((Period + 1) × duty_cycle) / 100
+```
+
+For **50% duty cycle** with **Period = 3**:
+
+```
+Pulse = ((3 + 1) × 50) / 100 = 200 / 100 = 2
+```
+
+This results in:
+- **High time**: 2 timer counts = 2 × (1/80 MHz) = 25 ns
+- **Low time**: 2 timer counts = 25 ns
+- **Total period**: 4 counts = 50 ns = **20 MHz**
+
+###### Initialization Sequence
+
+The PWM is initialized in `main.c` during boot:
+
+```c
+/* Core/Src/main.c */
+/* Initialize PWM Driver (20 MHz excitation signal on PA0) */
+HAL_PWM_Init(&htim2);           // 1. Link driver to TIM2 handle
+HAL_PWM_SetFrequency(20000000UL);  // 2. Configure for 20 MHz
+HAL_PWM_SetDutyCycle(50);       // 3. Set to 50% duty cycle
+HAL_PWM_Start();                // 4. Enable output
+```
+
+The PWM signal drives the RF resonance circuit. The FSM controls when excitation is active using `HAL_PWM_Start()` and `HAL_PWM_Stop()` calls during measurement and calibration cycles.
 
 #### 3.3.6 Gain Control (`HalBoard_GAIN_Set`, `HalBoard_GAIN_Get`)
 
@@ -1017,6 +1322,41 @@ All host ↔ firmware communication uses newline-terminated ASCII frames over US
 | `DAT:*` | Device → Host | Data payloads (results, traces, logs, LCD content) |
 
 An additional sub-prefix `STAT:HW:*` carries structured push-style hardware state frames for GUI updates.
+
+#### 11.1.1 Communication Hardware Interfaces
+
+The system features **two independent serial communication channels**: one for wired PC debugging and another for wireless Bluetooth control.
+
+**Communication Interfaces Configuration:**
+
+| Interface | Parameter | Value / Description | Code Reference |
+|-----------|-----------|---------------------|----------------|
+| **USB-Serial (ST-LINK VCP)** | Hardware Instance | **USART2** | - |
+|  | TX Pin | **PA2** | (Standard Nucleo VCP) |
+|  | RX Pin | **PA3** | (Standard Nucleo VCP) |
+|  | Baud Rate | **115200** | 8N1 |
+|  | Flow Control | **None** | - |
+|  | Usage | Primary Debugging (CLI, printf) | - |
+| **Bluetooth (u-blox NINA-B1)** | Hardware Instance | **UART4** | `huart4` |
+|  | TX Pin | **PC10** | `NINA_TX_Pin` |
+|  | RX Pin | **PC11** | `NINA_RX_Pin` |
+|  | RTS Pin | **PA15** | Hardware flow control |
+|  | CTS Pin | **PB7** | Hardware flow control |
+|  | Baud Rate | **115200** | `huart4.Init.BaudRate` |
+|  | Flow Control | **RTS/CTS Enabled** | `UART_HWCONTROL_RTS_CTS` |
+|  | Usage | Wireless Data Logging & App Connectivity | - |
+
+**USART2 (USB-Serial):**
+- Connected to the ST-LINK debugger's Virtual COM Port (VCP)
+- Appears as a standard serial device on the PC (`/dev/ttyACM0` on Linux, `COMx` on Windows)
+- Primary interface for CLI tools, GUI, and test scripts
+- No hardware flow control (relies on USB buffering)
+
+**UART4 (Bluetooth):**
+- Connected to the u-blox NINA-W156 Bluetooth/WiFi module
+- Hardware flow control (RTS/CTS) is **enabled** to prevent buffer overrun
+- Planned for smartphone app integration
+- Currently integrated into the protocol parser framework (see Section 11.4)
 
 ### 11.2 BT Manager / Protocol Parser (`bt_manager.c`)
 
