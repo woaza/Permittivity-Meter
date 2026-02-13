@@ -173,7 +173,7 @@ The system is controlled via an ASCII command protocol (`CMD:*` / `STAT:*` / `DA
 
 ### 3.1 Purpose and Responsibility
 
-The HAL Board layer provides **direct hardware control** for manual testing and debugging. It wraps the low-level HAL drivers (`hal_gpio`, `hal_dac`, `hal_adc`, `hal_pwm`) behind a validated, parameter-checked API. Unlike the BSP layer (which abstracts mock vs. real hardware for the application), HAL Board always operates on **real peripherals** and is accessed exclusively through `CMD:HAL:*` commands in manual mode.
+The HAL Board layer provides **direct hardware control** for manual testing and debugging. It wraps the low-level HAL drivers (`hal_gpio`, `hal_dac`, `hal_adc`, `hal_pwm`) behind a validated, parameter-checked API. Unlike the BSP layer (which abstracts mock vs. real hardware for the application), HAL Board always operates on **real peripherals** and is accessed exclusively through `CMD:HAL:*` commands in manual mode. The measuring aloghtrym, which is still missing, will then use this hallboard for measurments.
 
 ```
 bt_manager.c  →  handle_hal_command()
