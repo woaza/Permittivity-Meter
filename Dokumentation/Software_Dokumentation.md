@@ -101,33 +101,191 @@ Todo replace with image from Präsentation
 
 ### 3.1 Zweck und Verantwortlichkeit
 
+The HAL Board layer provides **direct hardware control** for manual testing and debugging. It wraps the low-level HAL drivers (`hal_gpio`, `hal_dac`, `hal_adc`, `hal_pwm`) behind a validated, parameter-checked API. Unlike the BSP layer (which abstracts mock vs. real hardware for the application), HAL Board always operates on **real peripherals** and is accessed exclusively through `CMD:HAL:*` commands in manual mode.
+
+```
+bt_manager.c  →  handle_hal_command()
+                     ↓
+              hal_board.c  (validation, mapping)
+                     ↓
+         hl/ drivers  (hal_gpio, hal_dac, hal_adc, hal_pwm)
+                     ↓
+              STM32 HAL  →  Hardware
+```
+
+Status codes returned by all functions:
+
+```c
+typedef enum {
+    HAL_BOARD_OK = 0,
+    HAL_BOARD_ERROR,
+    HAL_BOARD_ERROR_INVALID_PARAM,
+    HAL_BOARD_ERROR_NOT_READY
+} HalBoard_Status_t;
+```
+
 ### 3.2 Schnittstelle zum darunterliegenden HAL-Treiber
+
+Four driver modules sit below `hal_board.c`:
+
+| Driver | File | Peripheral | Key constants |
+|--------|------|------------|---------------|
+| **hal_gpio** | `hl/hal_gpio.c` | GPIO (LEDs, button, gain, NINA) | 9 pins (`HL_GPIO_PIN_COUNT`) |
+| **hal_dac** | `hl/hal_dac.c` | DAC1 (PA4 freq, PA5 Q) | 12-bit, 3.3 V ref, max 4095 |
+| **hal_adc** | `hl/hal_adc.c` | ADC1 (PC0 notch amp) | 512-sample DMA buffer, 122.5 kHz via TIM6 |
+| **hal_pwm** | `hl/hal_pwm.c` | TIM1 CH2 (PA9 excitation) | 80 MHz timer clock, default 20 MHz / 50 % |
+
+Pin mapping (from `hal_gpio.c` and `hardware_config.h`):
+
+| Pin enum | GPIO | Function |
+|----------|------|----------|
+| `HL_GPIO_LED_INIT` | PA6 | Green LED (init/idle) |
+| `HL_GPIO_LED_MEAS` | PA7 | Blue LED (measurement) |
+| `HL_GPIO_LED_EXCITE` | PC7 | Yellow LED (excitation) |
+| `HL_GPIO_LED_ERR` | PB1 | Red LED (error) |
+| `HL_GPIO_BTN_USER` | PC13 | User button B1 (active-low) |
+| `HL_GPIO_RF_GAIN_0` | PC8 | Gain select LSB |
+| `HL_GPIO_RF_GAIN_1` | PC9 | Gain select MSB |
+| `HL_GPIO_NINA_RST` | PA11 | NINA reset |
+| `HL_GPIO_NINA_STOP` | PA12 | NINA stop |
+
+Additional analogue pins: PA4 (DAC CH1, freq tuning), PA5 (DAC CH2, Q-factor tuning), PC0 (ADC1 CH1, notch amp input), PA9 (TIM1 CH2, 20 MHz PWM output).
 
 ### 3.3 Bereitgestellte Funktionen
 
 #### 3.3.1 LED-Steuerung (`HalBoard_LED_Set`, `HalBoard_LED_Get`, `HalBoard_LED_Toggle`)
 
+```c
+HalBoard_Status_t HalBoard_LED_Set(uint8_t led_id, uint8_t state);
+HalBoard_Status_t HalBoard_LED_Get(uint8_t led_id, uint8_t *state);
+HalBoard_Status_t HalBoard_LED_Toggle(uint8_t led_id);
+```
+
+`led_id` 0–3 maps to INIT/MEAS/EXCITE/ERR via an internal `led_id_to_gpio()` lookup. `state`: 0 = off, 1 = on. Returns `HAL_BOARD_ERROR_INVALID_PARAM` if `led_id > 3`. Delegates to `HL_GPIO_Write()`, `HL_GPIO_Read()`, `HL_GPIO_Toggle()`.
+
 #### 3.3.2 Button-Abfrage (`HalBoard_BTN_Read`)
+
+```c
+HalBoard_Status_t HalBoard_Button_Read(uint8_t *state);
+```
+
+Reads `HL_GPIO_BTN_USER` (PC13). The Nucleo B1 button is **active-low**; the firmware inverts: `GPIO_LOW → state = 1` (pressed).
 
 #### 3.3.3 DAC-Steuerung (`HalBoard_DAC_Set`, `HalBoard_DAC_SetRaw`)
 
+```c
+HalBoard_Status_t HalBoard_DAC_SetVoltage(uint8_t channel, float voltage);
+HalBoard_Status_t HalBoard_DAC_SetRaw(uint8_t channel, uint16_t raw_value);
+```
+
+`channel` 0 = freq tuning (PA4, `DAC_CH_FREQ_TUNE`), 1 = Q-factor (PA5, `DAC_CH_Q_FACTOR`). Voltage range: 0.0–3.3 V. Raw range: 0–4095. Conversion: `raw = (voltage / 3.3) × 4095`. Delegates to `HL_DAC_SetVoltage()` / `HL_DAC_SetRawValue()`.
+
 #### 3.3.4 ADC-Abfrage (`HalBoard_ADC_Read`, `HalBoard_ADC_ReadRaw`)
+
+```c
+HalBoard_Status_t HalBoard_ADC_ReadVoltage(float *voltage);
+HalBoard_Status_t HalBoard_ADC_ReadSingle(uint16_t *value);
+bool              HalBoard_ADC_IsBufferReady(void);
+```
+
+ADC1 runs **continuously** via TIM6 trigger + DMA circular mode with ping-pong 512-sample half-buffers (`ADC_DMA_BUFFER_SIZE = 1024`). `ReadSingle` averages the complete half-buffer (`sum / ADC_BUFFER_SIZE`). `ReadVoltage` converts: `(raw / 4095) × 3.3`. Returns `HAL_BOARD_ERROR_NOT_READY` if the DMA buffer is not yet complete. **Does not support blocking single conversions** (would conflict with DMA).
+
+Timer period: `80 MHz / 653 ≈ 122.5 kHz` sample rate.
 
 #### 3.3.5 PWM-Steuerung (`HalBoard_PWM_Start`, `HalBoard_PWM_Stop`, `HalBoard_PWM_SetFreq`, `HalBoard_PWM_SetDuty`)
 
+```c
+PWM_StatusTypeDef HAL_PWM_Init(TIM_HandleTypeDef *htim);
+PWM_StatusTypeDef HAL_PWM_Start(void);
+PWM_StatusTypeDef HAL_PWM_Stop(void);
+PWM_StatusTypeDef HAL_PWM_SetFrequency(uint32_t frequency_hz);
+PWM_StatusTypeDef HAL_PWM_SetDutyCycle(uint8_t duty_cycle);
+uint32_t          HAL_PWM_GetFrequency(void);
+uint8_t           HAL_PWM_GetDutyCycle(void);
+bool              HAL_PWM_IsRunning(void);
+```
+
+TIM1 CH2 on PA9. Timer clock: 80 MHz. Frequency formula: `f = 80 MHz / ((PSC + 1) × (ARR + 1))`. Period clamped to ≤ 65535. Pulse: `((ARR + 1) × duty) / 100`. Defaults: 20 MHz, 50 % duty. The PWM output is configured at boot but **not started** — the FSM controls excitation timing.
+
 #### 3.3.6 Gain-Steuerung (`HalBoard_GAIN_Set`, `HalBoard_GAIN_Get`)
+
+```c
+HalBoard_Status_t HalBoard_RF_SetGain(uint8_t gain_level);
+HalBoard_Status_t HalBoard_RF_GetGain(uint8_t *gain_level);
+```
+
+2-bit binary encoding on PC8 (bit 0, LSB) and PC9 (bit 1, MSB). `gain_level` 0–3 maps to 4 discrete gain settings. Set: decomposes into individual GPIO writes. Get: reads both pins and reconstructs `(bit1 << 1) | bit0`.
 
 #### 3.3.7 NINA-Modul-Steuerung (`HalBoard_NINA_Reset`, `HalBoard_NINA_Stop`)
 
+```c
+HalBoard_Status_t HalBoard_NINA_SetReset(uint8_t state);
+HalBoard_Status_t HalBoard_NINA_SetStop(uint8_t state);
+```
+
+`NINA_SetReset`: PA11 — 0 = hold in reset, 1 = release (run). `NINA_SetStop`: PA12 — 0 = running, 1 = stopped. Controls the NINA-W156 Bluetooth module.
+
 #### 3.3.8 LCD-Steuerung (`HalBoard_LCD_SetLine`)
+
+LCD writes are routed through `BSP_LCD_DisplayStringAt()` (see Ch. 5.4). The HAL board layer does not have its own LCD driver — the `CMD:HAL:LCD:SET` command calls the BSP LCD buffer directly.
 
 #### 3.3.9 Initialisierung (`HalBoard_Init`)
 
+```c
+void HalBoard_Init(void);
+```
+
+Calls `HL_GPIO_Init()` and sets the internal `s_initialized` flag. Must be called once after `HAL_Init()` and peripheral clock setup.
+
 ### 3.4 Manual-Mode-Konzept (Handbetrieb)
+
+All `CMD:HAL:*` commands are **locked by default**. They are only accepted when the FSM is in `STATE_MANUAL_OPERATION` (entered via `CMD:MANUAL:ON`). This prevents accidental hardware toggling during measurement or calibration cycles.
+
+If a `CMD:HAL:*` command arrives while manual mode is inactive, `bt_manager.c` responds with `STAT:HAL_LOCKED` without calling any HAL Board function. While manual mode is active, `CMD:CAL` / `CMD:MEAS` are rejected with `STAT:MANUAL_ACTIVE`.
 
 ### 3.5 CMD:HAL:\*-Befehlsrouting
 
+`bt_manager.c` → `handle_hal_command()` parses the sub-command after `CMD:HAL:` and routes to the appropriate `HalBoard_*` function:
+
+| Sub-command prefix | HAL Board function | Peripheral |
+|--------------------|-------------------|------------|
+| `LED:SET:<id>:<0/1>` | `HalBoard_LED_Set()` | GPIO |
+| `LED:GET:<id>` | `HalBoard_LED_Get()` | GPIO |
+| `LED:TOGGLE:<id>` | `HalBoard_LED_Toggle()` | GPIO |
+| `BTN:READ` | `HalBoard_Button_Read()` | GPIO |
+| `ADC:READ` | `HalBoard_ADC_ReadVoltage()` | ADC1 + DMA |
+| `ADC:RAW` | `HalBoard_ADC_ReadSingle()` | ADC1 + DMA |
+| `DAC:SET:<ch>:<V>` | `HalBoard_DAC_SetVoltage()` | DAC1 |
+| `DAC:RAW:<ch>:<val>` | `HalBoard_DAC_SetRaw()` | DAC1 |
+| `GAIN:SET:<0..3>` | `HalBoard_RF_SetGain()` | GPIO |
+| `GAIN:GET` | `HalBoard_RF_GetGain()` | GPIO |
+| `PWM:START / STOP / GET` | `HAL_PWM_Start/Stop/IsRunning` | TIM1 |
+| `PWM:FREQ:<hz>` | `HAL_PWM_SetFrequency()` | TIM1 |
+| `PWM:DUTY:<0..100>` | `HAL_PWM_SetDutyCycle()` | TIM1 |
+| `NINA:RST:<0/1>` | `HalBoard_NINA_SetReset()` | GPIO |
+| `NINA:STOP:<0/1>` | `HalBoard_NINA_SetStop()` | GPIO |
+| `LCD:SET:<line>:<text>` | `BSP_LCD_DisplayStringAt()` | BSP buffer |
+| `INIT` | `HalBoard_Init()` | All GPIO |
+
+Invalid sub-commands return `STAT:HAL_CMD_ERR`.
+
 ### 3.6 Push-Style ACK Frames (`STAT:HW:*`)
+
+In addition to legacy `STAT:HAL_*` acknowledgements, every successful `CMD:HAL:*` operation emits a structured `STAT:HW:*` push frame containing the applied value. This allows the PC GUI (`pc_ui.py`) to update controls immediately from responses instead of periodic polling.
+
+| Frame pattern | Content |
+|---------------|---------|
+| `STAT:HW:LED:<id>:<0/1>` | LED state after set/toggle |
+| `STAT:HW:DAC:<ch>:V:<volts>` | DAC voltage applied |
+| `STAT:HW:DAC:<ch>:RAW:<val>` | DAC raw value applied |
+| `STAT:HW:ADC:V:<volts>` | ADC voltage readback |
+| `STAT:HW:ADC:RAW:<val>` | ADC raw readback |
+| `STAT:HW:GAIN:<0..3>` | Gain level |
+| `STAT:HW:BTN:<0/1>` | Button state |
+| `STAT:HW:NINA:RST:<0/1>` / `STOP:<0/1>` | NINA control pin state |
+| `STAT:HW:PWM:RUN:<0/1>` / `FREQ:<hz>` / `DUTY:<pct>` | PWM state (3 frames on start/stop/get) |
+
+These frames are emitted by `output_hw_framef()` in `bt_manager.c` (format: `"STAT:HW:<payload>"`, max 96 bytes).
 
 ---
 
