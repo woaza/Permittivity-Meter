@@ -55,25 +55,24 @@ DAC_StatusTypeDef HL_DAC_Init(DAC_HandleTypeDef *hdac)
 /**
  * @brief Set DAC output voltage for a specific channel
  * @param channel: DAC channel (DAC_CH_FREQ_TUNE or DAC_CH_Q_FACTOR)
- * @param voltage: Desired voltage in Volts (0.0 to 3.3)
+ * @param voltage_mv: Desired voltage in Millivolts (0 to 3300)
  * @retval DAC_StatusTypeDef: Status of operation
  */
-DAC_StatusTypeDef HL_DAC_SetVoltage(DAC_ChannelTypeDef channel, float voltage)
+DAC_StatusTypeDef HL_DAC_SetVoltage(DAC_ChannelTypeDef channel, uint16_t voltage_mv)
 {
     if (hdac_local == NULL)
     {
         return DAC_ERROR_NOT_INITIALIZED;
     }
 
-    if (voltage < 0.0f || voltage > DAC_VOLTAGE_REF)
+    if (voltage_mv > DAC_VOLTAGE_REF_MV)
     {
         return DAC_ERROR_INVALID_PARAM;
     }
 
-    // Convert voltage to lookup table index (1mV resolution)
-    // Round to nearest mV: (V * 1000) + 0.5
-    uint32_t index = (uint32_t)(voltage * 1000.0f + 0.5f);
-
+    // Direct lookup - no math required!
+    // Safety check for array bounds (redundant due to check above but good practice)
+    uint32_t index = (uint32_t)voltage_mv;
     if (index >= DAC_LUT_SIZE)
     {
         index = DAC_LUT_SIZE - 1;

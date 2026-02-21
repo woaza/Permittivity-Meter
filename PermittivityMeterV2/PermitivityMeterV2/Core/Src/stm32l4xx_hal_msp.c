@@ -310,7 +310,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
 
     __HAL_RCC_GPIOB_CLK_ENABLE();
     /**I2C1 GPIO Configuration
-    PB6     ------> I2C1_SCL
+    PB8     ------> I2C1_SCL
     PB9     ------> I2C1_SDA
     */
     GPIO_InitStruct.Pin = LCD_SCL_Pin|LCD_SDA_Pin;
@@ -351,7 +351,7 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* hi2c)
     __HAL_RCC_I2C1_CLK_DISABLE();
 
     /**I2C1 GPIO Configuration
-    PB6     ------> I2C1_SCL
+    PB8     ------> I2C1_SCL
     PB9     ------> I2C1_SDA
     */
     HAL_GPIO_DeInit(LCD_SCL_GPIO_Port, LCD_SCL_Pin);
@@ -552,35 +552,17 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     /* Peripheral clock enable */
     __HAL_RCC_UART4_CLK_ENABLE();
 
-    __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOC_CLK_ENABLE();
-    __HAL_RCC_GPIOB_CLK_ENABLE();
     /**UART4 GPIO Configuration
-    PA15 (JTDI)     ------> UART4_RTS
     PC10     ------> UART4_TX
     PC11     ------> UART4_RX
-    PB7     ------> UART4_CTS
     */
-    GPIO_InitStruct.Pin = NINA_RTS_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF8_UART4;
-    HAL_GPIO_Init(NINA_RTS_GPIO_Port, &GPIO_InitStruct);
-
     GPIO_InitStruct.Pin = NINA_TX_Pin|NINA_RX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF8_UART4;
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = NINA_CTS_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF8_UART4;
-    HAL_GPIO_Init(NINA_CTS_GPIO_Port, &GPIO_InitStruct);
 
     /* USER CODE BEGIN UART4_MspInit 1 */
 
@@ -678,16 +660,10 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
     __HAL_RCC_UART4_CLK_DISABLE();
 
     /**UART4 GPIO Configuration
-    PA15 (JTDI)     ------> UART4_RTS
     PC10     ------> UART4_TX
     PC11     ------> UART4_RX
-    PB7     ------> UART4_CTS
     */
-    HAL_GPIO_DeInit(NINA_RTS_GPIO_Port, NINA_RTS_Pin);
-
     HAL_GPIO_DeInit(GPIOC, NINA_TX_Pin|NINA_RX_Pin);
-
-    HAL_GPIO_DeInit(NINA_CTS_GPIO_Port, NINA_CTS_Pin);
 
     /* USER CODE BEGIN UART4_MspDeInit 1 */
 
