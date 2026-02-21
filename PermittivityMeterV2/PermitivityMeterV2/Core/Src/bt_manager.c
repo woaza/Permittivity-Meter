@@ -406,14 +406,16 @@ static bool handle_hal_adc_command(const char *payload)
 {
     /* CMD:HAL:ADC:READ */
     if (strncmp(payload, "READ", 4) == 0) {
-        float voltage = 0.0f;
-        if (HalBoard_ADC_ReadVoltage(&voltage) == HAL_BOARD_OK) {
-            char v_str[16];
-            fmt_fixed_3(v_str, sizeof(v_str), voltage);
+        uint16_t voltage_mv = 0;
+        if (HalBoard_ADC_ReadVoltage(&voltage_mv) == HAL_BOARD_OK) {
             char resp[48];
-            snprintf(resp, sizeof(resp), "HAL_ADC:%sV", v_str);
+            snprintf(resp, sizeof(resp), "HAL_ADC:%u.%03uV",
+                     (unsigned)(voltage_mv / 1000U),
+                     (unsigned)(voltage_mv % 1000U));
             BT_SendStatus(resp);
-            output_hw_framef("ADC:V:%s", v_str);
+            output_hw_framef("ADC:V:%u.%03u",
+                             (unsigned)(voltage_mv / 1000U),
+                             (unsigned)(voltage_mv % 1000U));
         } else {
             BT_SendStatus("HAL_ADC_ERR");
         }
@@ -635,7 +637,8 @@ static bool handle_hal_nina_command(const char *payload)
         return true;
     }
     
-    /* CMD:HAL:NINA:STOP:<state>  (0=run, 1=stop) */
+    /* CMD:HAL:NINA:STOP:<state>  (REMOVED) */
+    /*
     if (strncmp(payload, "STOP:", 5) == 0) {
         uint32_t state = 0;
         if (!parse_uint_arg(payload + 5, &state)) {
@@ -643,43 +646,29 @@ static bool handle_hal_nina_command(const char *payload)
             return true;
         }
         
-        if (HalBoard_NINA_SetStop((uint8_t)state) == HAL_BOARD_OK) {
-            BT_SendStatus(state ? "HAL_NINA:STOPPED" : "HAL_NINA:RUNNING");
-            output_hw_framef("NINA:STOP:%u", (unsigned)state);
-        } else {
-            BT_SendStatus("HAL_NINA_ERR");
-        }
+        // HalBoard_NINA_SetStop removed
+        BT_SendStatus("HAL_NINA_ERR_NOT_IMPL");
         return true;
     }
+    */
 
-    /* CMD:HAL:NINA:DTR:<state>  (0=low, 1=high) */
+    /* CMD:HAL:NINA:DTR:<state>  (REMOVED) */
+    /*
     if (strncmp(payload, "DTR:", 4) == 0) {
-        uint32_t state = 0;
-        if (!parse_uint_arg(payload + 4, &state)) {
-            BT_SendStatus("HAL_NINA_ERR");
-            return true;
-        }
-        
-        if (HalBoard_NINA_SetDTR((uint8_t)state) == HAL_BOARD_OK) {
-            BT_SendStatus("HAL_NINA_DTR_OK");
-            output_hw_framef("NINA:DTR:%u", (unsigned)state);
-        } else {
-            BT_SendStatus("HAL_NINA_ERR");
-        }
+        // HalBoard_NINA_SetDTR removed
+        BT_SendStatus("HAL_NINA_ERR_NOT_IMPL");
         return true;
     }
+    */
 
-    /* CMD:HAL:NINA:DSR:READ */
+    /* CMD:HAL:NINA:DSR:READ (REMOVED) */
+    /*
     if (strncmp(payload, "DSR:READ", 8) == 0) {
-        uint8_t state = 0;
-        if (HalBoard_NINA_GetDSR(&state) == HAL_BOARD_OK) {
-            BT_SendStatus("HAL_NINA_DSR_OK");
-            output_hw_framef("NINA:DSR:%u", (unsigned)state);
-        } else {
-            BT_SendStatus("HAL_NINA_ERR");
-        }
+        // HalBoard_NINA_GetDSR removed
+        BT_SendStatus("HAL_NINA_ERR_NOT_IMPL");
         return true;
     }
+    */
 
     /* CMD:HAL:NINA:LED:<id>:READ */
     if (strncmp(payload, "LED:", 4) == 0) {
