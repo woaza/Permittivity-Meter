@@ -463,7 +463,10 @@ static bool handle_hal_dac_command(const char *payload)
             return true;
         }
         
-        if (HalBoard_DAC_SetVoltage((uint8_t)channel, voltage) == HAL_BOARD_OK) {
+        /* Convert volts (float) to millivolts (uint16_t) for the HAL API. */
+        uint16_t voltage_mv = (uint16_t)(voltage * 1000.0f + 0.5f);
+        
+        if (HalBoard_DAC_SetVoltage((uint8_t)channel, voltage_mv) == HAL_BOARD_OK) {
             char v2_str[32];
             char v3_str[32];
             if (!isfinite(voltage)) {

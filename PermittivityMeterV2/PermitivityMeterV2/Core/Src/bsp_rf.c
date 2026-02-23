@@ -43,7 +43,7 @@ void BSP_RF_SetQVaricap(float voltage_v)
 
 void BSP_RF_SetGain(uint8_t gain_idx)
 {
-    s_gain_idx = gain_idx & 0x03U;
+    s_gain_idx = gain_idx & 0x07U;
     char buffer[16];
     (void)snprintf(buffer, sizeof(buffer), "gain=%u", (unsigned)s_gain_idx);
     Debug_LogDriver("RF", buffer);

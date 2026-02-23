@@ -140,11 +140,15 @@ ADC_StatusTypeDef HL_ADC_Stop(void)
  */
 uint16_t* HL_ADC_GetBuffer(void)
 {
+    __disable_irq();
     if (buffer_ready_flag)
     {
         buffer_ready_flag = false; // Consume-on-read
-        return (uint16_t*)ready_buffer_ptr;
+        uint16_t *ptr = (uint16_t*)ready_buffer_ptr;
+        __enable_irq();
+        return ptr;
     }
+    __enable_irq();
     return NULL;
 }
 

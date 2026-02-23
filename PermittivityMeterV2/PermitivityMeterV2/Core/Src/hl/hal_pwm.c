@@ -290,11 +290,11 @@ bool HAL_PWM_IsRunning(void)
  */
 void HAL_PWM_Pulse_Update(void)
 {
-    static uint8_t duty = 0;
-    static int8_t step = 1;
+    static int16_t duty = 0;
+    static int16_t step = 1;
 
-    HAL_PWM_SetDutyCycle(duty);
+    HAL_PWM_SetDutyCycle((uint8_t)duty);
     duty += step;
-    if (duty >= 100) step = -1;
-    if (duty <= 0) step = 1;
+    if (duty >= 100) { duty = 100; step = -1; }
+    if (duty <= 0)   { duty = 0;   step = 1;  }
 }
