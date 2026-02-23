@@ -71,6 +71,19 @@ ADC_StatusTypeDef HL_ADC_Init(ADC_HandleTypeDef *hadc, TIM_HandleTypeDef *htim)
         return ADC_ERROR;
     }
 
+    // --- CRITICAL: Override CubeMX default ADC configuration ---
+    // CubeMX sets ContinuousConvMode = ENABLE and ExternalTrigConv = SOFTWARE by default.
+    // We need ContinuousConvMode = DISABLE and ExternalTrigConv = TIM6_TRGO to strictly follow timing.
+    
+    hadc_local->Init.ContinuousConvMode = DISABLE;
+    hadc_local->Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO;
+    hadc_local->Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+
+    if (HAL_ADC_Init(hadc_local) != HAL_OK)
+    {
+        return ADC_ERROR;
+    }
+
     return ADC_OK;
 }
 
@@ -127,11 +140,15 @@ ADC_StatusTypeDef HL_ADC_Stop(void)
  */
 uint16_t* HL_ADC_GetBuffer(void)
 {
+    __disable_irq();
     if (buffer_ready_flag)
     {
         buffer_ready_flag = false; // Consume-on-read
-        return (uint16_t*)ready_buffer_ptr;
+        uint16_t *ptr = (uint16_t*)ready_buffer_ptr;
+        __enable_irq();
+        return ptr;
     }
+    __enable_irq();
     return NULL;
 }
 
@@ -178,6 +195,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     if (hadc == hadc_local)
     {
         // Second half of buffer is ready (indices 512 to 1023)
+        //Sampling-time test
+        //HAL_GPIO_TogglePin(MEAS_LED_GPIO_Port, MEAS_LED_Pin);
+
         ready_buffer_ptr = &dma_buffer[ADC_BUFFER_SIZE];
         buffer_ready_flag = true;
     }

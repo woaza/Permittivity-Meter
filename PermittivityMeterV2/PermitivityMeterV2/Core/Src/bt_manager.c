@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <float.h>
 #include <math.h>
 
 #include "bsp_rf.h"
@@ -405,14 +406,16 @@ static bool handle_hal_adc_command(const char *payload)
 {
     /* CMD:HAL:ADC:READ */
     if (strncmp(payload, "READ", 4) == 0) {
-        float voltage = 0.0f;
-        if (HalBoard_ADC_ReadVoltage(&voltage) == HAL_BOARD_OK) {
-            char v_str[16];
-            fmt_fixed_3(v_str, sizeof(v_str), voltage);
+        uint16_t voltage_mv = 0;
+        if (HalBoard_ADC_ReadVoltage(&voltage_mv) == HAL_BOARD_OK) {
             char resp[48];
-            snprintf(resp, sizeof(resp), "HAL_ADC:%sV", v_str);
+            snprintf(resp, sizeof(resp), "HAL_ADC:%u.%03uV",
+                     (unsigned)(voltage_mv / 1000U),
+                     (unsigned)(voltage_mv % 1000U));
             BT_SendStatus(resp);
-            output_hw_framef("ADC:V:%s", v_str);
+            output_hw_framef("ADC:V:%u.%03u",
+                             (unsigned)(voltage_mv / 1000U),
+                             (unsigned)(voltage_mv % 1000U));
         } else {
             BT_SendStatus("HAL_ADC_ERR");
         }
@@ -460,7 +463,10 @@ static bool handle_hal_dac_command(const char *payload)
             return true;
         }
         
-        if (HalBoard_DAC_SetVoltage((uint8_t)channel, voltage) == HAL_BOARD_OK) {
+        /* Convert volts (float) to millivolts (uint16_t) for the HAL API. */
+        uint16_t voltage_mv = (uint16_t)(voltage * 1000.0f + 0.5f);
+        
+        if (HalBoard_DAC_SetVoltage((uint8_t)channel, voltage_mv) == HAL_BOARD_OK) {
             char v2_str[32];
             char v3_str[32];
             if (!isfinite(voltage)) {
@@ -634,7 +640,8 @@ static bool handle_hal_nina_command(const char *payload)
         return true;
     }
     
-    /* CMD:HAL:NINA:STOP:<state>  (0=run, 1=stop) */
+    /* CMD:HAL:NINA:STOP:<state>  (REMOVED) */
+    /*
     if (strncmp(payload, "STOP:", 5) == 0) {
         uint32_t state = 0;
         if (!parse_uint_arg(payload + 5, &state)) {
@@ -642,15 +649,69 @@ static bool handle_hal_nina_command(const char *payload)
             return true;
         }
         
-        if (HalBoard_NINA_SetStop((uint8_t)state) == HAL_BOARD_OK) {
-            BT_SendStatus(state ? "HAL_NINA:STOPPED" : "HAL_NINA:RUNNING");
-            output_hw_framef("NINA:STOP:%u", (unsigned)state);
+        // HalBoard_NINA_SetStop removed
+        BT_SendStatus("HAL_NINA_ERR_NOT_IMPL");
+        return true;
+    }
+    */
+
+    /* CMD:HAL:NINA:DTR:<state>  (REMOVED) */
+    /*
+    if (strncmp(payload, "DTR:", 4) == 0) {
+        // HalBoard_NINA_SetDTR removed
+        BT_SendStatus("HAL_NINA_ERR_NOT_IMPL");
+        return true;
+    }
+    */
+
+    /* CMD:HAL:NINA:DSR:READ (REMOVED) */
+    /*
+    if (strncmp(payload, "DSR:READ", 8) == 0) {
+        // HalBoard_NINA_GetDSR removed
+        BT_SendStatus("HAL_NINA_ERR_NOT_IMPL");
+        return true;
+    }
+    */
+
+    /* CMD:HAL:NINA:LED:<id>:READ */
+    if (strncmp(payload, "LED:", 4) == 0) {
+        uint32_t id = 0;
+        if (!parse_uint_arg(payload + 4, &id)) {
+            BT_SendStatus("HAL_NINA_ERR");
+            return true;
+        }
+        
+        uint8_t state = 0;
+        if (HalBoard_NINA_GetLED((uint8_t)id, &state) == HAL_BOARD_OK) {
+            BT_SendStatus("HAL_NINA_LED_OK");
+            output_hw_framef("NINA:LED:%u:%u", (unsigned)id, (unsigned)state);
         } else {
             BT_SendStatus("HAL_NINA_ERR");
         }
         return true;
     }
     
+    return false;
+}
+
+static bool handle_hal_opamp_command(const char *payload)
+{
+    /* CMD:HAL:OPAMP:DIS:<state> (0=enable, 1=disable) */
+    if (strncmp(payload, "DIS:", 4) == 0) {
+        uint32_t state = 0;
+        if (!parse_uint_arg(payload + 4, &state)) {
+            BT_SendStatus("HAL_OPAMP_ERR");
+            return true;
+        }
+        
+        if (HalBoard_OpAmp_SetDisable((uint8_t)state) == HAL_BOARD_OK) {
+            BT_SendStatus("HAL_OPAMP_OK");
+            output_hw_framef("OPAMP:DIS:%u", (unsigned)state);
+        } else {
+            BT_SendStatus("HAL_OPAMP_ERR");
+        }
+        return true;
+    }
     return false;
 }
 
@@ -769,6 +830,10 @@ static bool handle_hal_command(const char *buffer)
     if (strncmp(payload, "PWM:", 4) == 0) {
         return handle_hal_pwm_command(payload + 4);
     }
+
+    if (strncmp(payload, "OPAMP:", 6) == 0) {
+        return handle_hal_opamp_command(payload + 6);
+    }
     
     /* CMD:HAL:INIT - Initialize HAL Board */
     if (strncmp(payload, "INIT", 4) == 0) {
@@ -780,6 +845,62 @@ static bool handle_hal_command(const char *buffer)
     
     BT_SendStatus("HAL_CMD_ERR");
     return true;
+}
+
+static void handle_test_adc_command(void)
+{
+    /* CMD:TEST:ADC */
+    /* Performs 100 samples with Excitation ON and calculates statistics */
+    
+    BT_SendStatus("TEST_ADC_START");
+    
+    /* Setup */
+    BSP_RF_EnableExcitation(1U);
+    BSP_RF_SetOpAmpEnable(1U); // Enable buffer
+    BSP_RF_SetGain(1U); 
+    BSP_RF_SetFreqVaricap(1.2f); // Mid-range
+    BSP_RF_SetQVaricap(1.0f);
+    
+    /* Discard first few samples (settling) */
+    HAL_Delay(50); 
+    BSP_RF_ReadAmplitude();
+    BSP_RF_ReadAmplitude();
+
+    float sum = 0.0f;
+    float sum_sq = 0.0f;
+    float min_val = FLT_MAX;
+    float max_val = -FLT_MAX;
+    const int N = 100;
+    int valid_count = 0;
+
+    for (int i = 0; i < N; i++) {
+        float val = BSP_RF_ReadAmplitude();
+        if (isfinite(val)) {
+            sum += val;
+            sum_sq += (val * val);
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
+            valid_count++;
+        }
+        /* Small delay to allow buffer refresh if polling fast */
+        HAL_Delay(2); 
+    }
+    
+    BSP_RF_EnableExcitation(0U); // Cleanup
+
+    if (valid_count > 0) {
+        float mean = sum / valid_count;
+        float variance = (sum_sq / valid_count) - (mean * mean);
+        float std_dev = sqrtf(variance > 0 ? variance : 0.0f);
+        
+        char buf[128];
+        snprintf(buf, sizeof(buf), "TEST:ADC:N:%d:MEAN:%.4f:STD:%.4f:MIN:%.4f:MAX:%.4f", 
+                 valid_count, mean, std_dev, min_val, max_val);
+        output_line(buf);
+        BT_SendStatus("TEST_ADC_OK");
+    } else {
+        BT_SendStatus("TEST_ADC_FAIL_NO_DATA");
+    }
 }
 
 void BT_Manager_Init(void)
@@ -885,6 +1006,8 @@ void BT_ProcessIncoming(const char *buffer)
         push_event(BT_EVENT_MANUAL_OFF);
         Debug_LogDriver("BT_RX", "CMD:MANUAL:OFF");
         BT_SendStatus("MANUAL_OFF_REQ");
+    } else if (strncmp(buffer, "CMD:TEST:ADC", 12) == 0) {
+        handle_test_adc_command();
     } else {
         Debug_LogDriver("BT_RX", "IGN");
         return;

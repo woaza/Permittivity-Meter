@@ -1,15 +1,46 @@
 /**
   ******************************************************************************
   * @file    hal_adc.h
-  * @brief   Header file for ADC hardware abstraction layer
+  * @brief   Hardware Abstraction Layer for High-Speed ADC Acquisition
   * @author  Majdedin Al Rashid
   * @date    26.11.2025
   ******************************************************************************
-  * @attention
+  * @details
+  * This module manages the Analog-to-Digital Converter (ADC1) for sampling the
+  * input signal. It is designed for high-speed, continuous data acquisition
+  * using hardware timers and DMA to minimize CPU intervention.
   *
-  * This file provides an abstraction layer for ADC acquisition on PC0 (ADC1_IN1).
-  * It handles Timer-Triggered acquisition (TIM6) and DMA Circular buffering.
+  * **Configuration:**
+  * - **Input Pin**: PC0 (ADC1 Channel 1) - Connected to Notch Filter Output.
+  * - **Trigger Source**: TIM6 Update Event details (Hardware Trigger).
+  * - **Data Transfer**: DMA1 Channel 1 in Circular Mode.
+  * - **Buffering**: Double-buffering scheme (Half-Cplt and Full-Cplt callbacks).
   *
+  * @section adc_usage How to Use
+  *
+  * 1. **Initialization** (Normally done in main.c):
+  *    @code
+  *    // Initialize HAL drivers
+  *    HL_ADC_Init(&hadc1, &htim6);
+  *    @endcode
+  *
+  * 2. **Start Acquisition**:
+  *    @code
+  *    HL_ADC_Start();
+  *    @endcode
+  *
+  * 3. **Data Processing Loop**:
+  *    The application should check for new data availability in the main loop.
+  *    @code
+  *    if (HL_ADC_IsBufferReady())
+  *    {
+  *        uint16_t *pData = HL_ADC_GetBuffer();
+  *        // Process pData[0] ... pData[ADC_BUFFER_SIZE-1]
+  *    }
+  *    @endcode
+  *
+  * @note The sampling rate is determined by TIM6 configuration.
+  *       Target is 122.5 kHz.
   ******************************************************************************
   */
 

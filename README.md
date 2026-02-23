@@ -89,29 +89,68 @@ After that, `CMD:CONN` should respond with exactly one `STAT:RDY`.
 
 ### Pinout Configuration
 
+> [!NOTE]
+> This is a summary. For the authoritative pinout, see [Dokumentation/Pinout_config/README.md](Dokumentation/Pinout_config/README.md).
+
 | Pin | Name | Function | Description |
 | :--- | :--- | :--- | :--- |
-| **PC13** | `B1` | **User Button** | Triggers Calibration (1st press) or Measurement (2nd press). |
-| **PA6** | `INIT_LED` | **LED (Green)** | Indicates System Initialization / Idle State. |
-| **PA7** | `MEAS_LED` | **LED (Blue)** | Indicates Measurement/Calibration in progress. |
-| **PC7** | `EXCITE_LED` | **LED (Yellow)** | Indicates RF Excitation is Active. |
-| **PB6** | `ERR_LED` | **LED (Red)** | Indicates Error State. |
+| **PA0** | `SQR_20M_OUT` | **PWM Output** | 20 MHz Excitation Signal (TIM2_CH1). |
 | **PA4** | `FRQ_TN` | **DAC1 Ch1** | Frequency Tuning Varicap Voltage. |
 | **PA5** | `Q_FACT_TN` | **DAC1 Ch2** | Q-Factor Tuning Varicap Voltage. |
+| **PC0** | `NOTCH_AMP_IN` | **ADC1 IN1** | Notch Filter Output Amplitude. |
+| **PC13** | `B1` | **User Button** | Wake-up / Manual Trigger. |
+| **PB8** | `INIT_LED` | **LED (Green)** | System Initialization / Status. |
+| **PC9** | `MEAS_LED` | **LED (Yellow)** | Measurement in Progress. |
+| **PC8** | `EXCITE_LED` | **LED (Blue)** | RF Excitation Active. |
+| **PC6** | `ERR_LED` | **LED (Red)** | Error State. |
+| **PC10** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
+| **PC11** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
+| **PA15** | `NINA_RTS` | **UART4 RTS** | Bluetooth Flow Control (RTS). |
+| **PA11** | `NINA_RST` | **GPIO Output** | NINA Reset (Active Low). |
+| **PC3** | `GAIN_SLCT_1` | **GPIO Output** | RF Gain Select Bit 0. |
+| **PC1** | `GAIN_SLCT_2` | **GPIO Output** | RF Gain Select Bit 1. |
+| **PB0** | `GAIN_SLCT_3` | **GPIO Output** | RF Gain Select Bit 1. |
+| **PC4** | `OP_DIS` | **GPIO Output** | Op-Amp Disable. |
 | **PA9** | `SQR_20M_OUT` | **TIM1 CH2** | 20 MHz PWM Excitation Signal. |
-| **PA1** | `NINA_RX` | **UART4 RX** | Bluetooth Module RX. |
-| **PA0** | `NINA_TX` | **UART4 TX** | Bluetooth Module TX. |
 | **PA2** | `VCP_TX` | **USART2 TX** | USB Virtual COM Port TX. |
 | **PA3** | `VCP_RX` | **USART2 RX** | USB Virtual COM Port RX. |
-| **PC8** | `GAIN_SLCT_1` | **GPIO Out** | RF Gain Select Bit 0. |
-| **PC9** | `GAIN_SLCT_2` | **GPIO Out** | RF Gain Select Bit 1. |
-| **PB8** | `I2C1_SCL` | **I2C SCL** | LCD Display Clock. |
-| **PB9** | `I2C1_SDA` | **I2C SDA** | LCD Display Data. |
+| **PB6** | `LCD_SCL` | **I2C SCL** | LCD Display Clock. |
+| **PB7** | `LCD_SDA` | **I2C SDA** | LCD Display Data. |
 
 ### Electronics Notes
 
-* **PWM Output**: The GPIO (PA9) outputs 3.3V, but the RF circuit requires a **1V peak**. An **OpAmp buffer** with attenuation is required between the MCU and the circuit.
-* **Varicap Control**: The DAC outputs (PA4, PA5) control the Varicaps. Channel 1 tunes the frequency (D1), and Channel 2 tunes the Q-factor.
+- **PWM Output**: The GPIO (PA0) outputs 3.3V, but the RF circuit requires a **1V peak**. An **OpAmp buffer** with attenuation or a voltage divider is required between the MCU and the circuit.
+- **Varicap Control**: The DAC outputs (PA4, PA5) control the Varicaps. Channel 1 tunes the frequency (D1), and Channel 2 tunes the Q-factor.
+
+---
+
+## Signal Path
+
+The diagram illustrates the signal path and processing flow within the system.
+
+![Signal Path Diagram](Dokumentation/Signal%20Path/image-2.png)
+
+### PA8: RCC_MCO1 Output
+
+PA8 is a multifunctional GPIO pin on the STM32L476RG (LQFP64 package, pin 41), capable of digital I/O, alternate functions (AF), and analog modes. It's sourced from an external 20 MHz quartz crystal (X3) for improved accuracy and stability—essential for precise permittivity measurements in varying mountain environments since the quartz can withstand extreme temperature (-20°C to 80°C).
+
+The PA8 outputs a stable 20 MHz square wave by tapping the RCC_MCO1, derived from SYSCLK (which can go up to 80 MHz) divided by 4. This provides a fixed 50% duty signal for the LC filter.
+
+### Clock Source Selection
+
+The high-speed external (HSE) clock can be supplied with a 4 to 48 MHz crystal/ceramic resonator oscillator. The software sets SYSCLK to the chosen frequency (HSE/PLL for stability, ±50 ppm with HSE crystal recommended for mountains).
+
+### PLL Role
+
+Direct HSE is fixed at 20 MHz; PLL allows flexible SYSCLK (70-80 MHz), then MCO divider tunes output. The notch filter resonates at ~20 MHz in air; snow shifts it (Δf ∝ ε', ΔQ ∝ 1/ε'').
+
+To calibrate (find minimum amplitude), the feedback loop uses binary search:
+
+1. Measure notch output amplitude (ADC → FFT → Peak detection).
+2. If not minimum, adjust PLL multipliers/dividers to change MCO frequency (e.g., from 20 MHz to 17.5 MHz).
+3. Re-measure until tuned.
+
+**Clock Flow**: HSE (20 MHz) → Selected as PLL input → Multiplied to 80 MHz SYSCLK for fast processing → Divided back to 20 MHz for MCO output.
 
 ---
 
@@ -182,11 +221,16 @@ flowchart LR
 
 ### Signal Processing (Undersampling)
 
-The RF signal is **20 MHz**, which exceeds the Nyquist limit of the STM32 ADC (~5 Msps). We use **Undersampling (Bandpass Sampling)**:
+The RF signal is **20 MHz**, which exceeds the Nyquist limit of the STM32 ADC (~5 Msps). We use **Undersampling (Bandpass Sampling)** to alias the signal down to a measurable frequency.
 
-1. **Sampling Rate ($f_s$)**: Configured (via TIM6) such that $|20\text{MHz} - N \cdot f_s| \approx 10\text{-}50\text{kHz}$.
-2. **Capture**: DMA fills a buffer (e.g., 256 samples).
-3. **Processing**: A **DFT/FFT** extracts the magnitude of the alias frequency. This acts as a narrowband filter.
+**Configuration (Verified 21-Dec-2025):**
+
+1. **Sampling Rate ($f_s$)**: **122.5 kHz** (via TIM6 Trigger).
+   - Clock: 80 MHz / 653 $\approx$ 122.511 kHz.
+   - Measured Interrupt Rate (PC9 Toggle): ~59.81 Hz $\rightarrow$ ~120.44 kHz effective sampling (consistent with 1024-sample DMA buffer).
+2. **Alias Target**: With 20 MHz input and 122.511 kHz sampling, the alias appears at **~30.4 kHz**.
+3. **Capture**: DMA fills a generic buffer (Ping-Pong, total 1024 samples).
+4. **Processing**: A **DFT/Goertzel** algorithm extracts the magnitude of this ~30 kHz alias.
 
 ---
 
@@ -196,9 +240,9 @@ The device operates autonomously using the onboard Button, LEDs, and LCD.
 
 ### Button Logic (PC13)
 
-* **1st Press**: Triggers **Calibration** (if no valid calibration exists).
-* **2nd Press**: Triggers **Measurement** (if calibration is valid).
-* **Press in Error State**: Resets the system to Init.
+- **1st Press**: Triggers **Calibration** (if no valid calibration exists).
+- **2nd Press**: Triggers **Measurement** (if calibration is valid).
+- **Press in Error State**: Resets the system to Init.
 
 ### LED & LCD Status
 
@@ -214,47 +258,140 @@ Note: there is no separate FSM state called "RESULT" in the current V2 flow. The
 
 ---
 
-## 5. Development Roadmap (To-Dos)
+## 5. Development Roadmap
 
-### A. Transition from Mock to Real Hardware (Priority: High)
+> [!NOTE]
+> Tasks are ordered by dependency – complete each step before moving to the next.
 
-* **Context**: `bsp_rf.c` is currently a mock that logs to UART but doesn't touch pins.
-* **Tasks**:
-    1. [ ] **Enable Drivers**: In `bsp_rf.c`, replace `Debug_LogDriver` with:
-        * `HL_DAC_SetVoltage(DAC_CH_FREQ, v)`
-        * `HL_DAC_SetVoltage(DAC_CH_Q, v)`
-    2. [ ] **Clean Main Loop**: Remove the manual waveform generation code in `main.c`'s `while(1)` loop. It conflicts with the FSM.
-    3. [ ] **Verify Timing**: Add `HAL_Delay(1)` in `rf_measure.c`'s `sample_at()` to allow Varicap voltage to settle.
+### Phase 1: Hardware Prerequisites
 
-### B. Signal Processing Implementation
+> These hardware tasks MUST be completed before firmware can be tested on real hardware.
 
-* **Context**: We need to measure 20MHz using a slower ADC via undersampling.
-* **Tasks**:
-    1. [ ] **ADC Timer**: Configure `main.c` / `hal_adc.c` (TIM6) to a specific frequency $f_s$ (e.g., ~800.1 kHz) to alias 20MHz to ~2.5kHz.
-    2. [ ] **Buffer Capture**: Implement `BSP_RF_CaptureBuffer(float* buffer, size_t len)` in `bsp_rf.c` using DMA.
-    3. [ ] **DFT Logic**: Implement a simple DFT/Goertzel in `math_model.c` to calculate magnitude at the alias frequency.
-    4. [ ] **Update Measure**: Modify `rf_measure.c` to use the buffer+DFT method instead of single-point sampling.
+- [x] **1.1 PWM Output Attenuation**
+  - Add voltage divider after PA0 to attenuate 3.3V PWM to **1V peak**.
+  - The GPIO cannot drive 50Ω directly; an OpAmp buffer is required.
 
-### C. User Interface Enhancements
-
-* **Context**: The LCD currently only shows status strings, not results.
-* **Tasks**:
-    1. [ ] **Display Result**: Update `FSM_HandleCalculation` to format the result (e.g., `E: 1.54 D: 0.32`) and display it on the LCD.
-
-### D. PC Control & Mirroring
-
-* **Context**: The PC CLI (`tools/pc_cli.py`) should control the device exactly like the Bluetooth app.
-* **Tasks**:
-    1. [ ] **Add UART4/NINA transport**: Implement UART4 RX/TX for the NINA module and route its received lines into the same `BT_ProcessIncoming()` command parser.
-    2. [x] **USB Input**: USART2 RX is line-wise and feeds directly into the command parser via `usb_cdc_bridge.c` → `BT_ProcessIncoming()`.
-    3. [x] **Burst Safety**: Back-to-back commands are protected by a UART RX line queue and an FSM event queue.
-
-### E. Hardware / Electronics
-
-* [ ] **PWM Level**: Add OpAmp buffer/divider to PA9 to attenuate 3.3V PWM to 1V peak.
-* [ ] **Power**: Design for -40°C operation and battery support.
+- [x] **1.2 Varicap Wiring Verification**
+  - Confirm PA4 (DAC Ch1) connects to D1 (Frequency Tuning).
+  - Confirm PA5 (DAC Ch2) connects to D2 (Q-Factor Tuning).
 
 ---
+
+### Phase 2: Mock-to-Hardware Transition  *(Priority: High)*
+
+> These firmware tasks transition from simulation to real hardware control.
+
+- [ ] **2.1 Enable HAL Drivers in BSP**
+  - In `bsp_rf.c`, replace `Debug_LogDriver()` calls with:
+    - `HL_DAC_SetVoltage(DAC_CH_FREQ, v)` for frequency tuning.
+    - `HL_DAC_SetVoltage(DAC_CH_Q, v)` for Q-factor tuning.
+  - Verify PWM is started via `HL_PWM_Start()`.
+
+- [x] **2.2 Clean Up `main.c`**
+  - Remove the manual waveform generation code in the `while(1)` loop.
+  - Let the FSM control all hardware via BSP functions.
+
+- [ ] **2.3 Add Settling Delay**
+  - In `rf_measure.c`, add `HAL_Delay(1)` in `sample_at()` to allow Varicap voltage to settle before ADC read.
+
+- [ ] **2.4 Integration Test**
+  - Run Calibration via button press.
+  - Verify DAC voltages change on PA4/PA5 (use multimeter or scope).
+  - Verify 20 MHz PWM is active on PA9 during sweep.
+
+---
+
+### Phase 3: Signal Processing (Undersampling)
+
+> Implement the ADC capture and DFT processing to measure 20 MHz.
+
+- [x] **3.1 Configure ADC Sampling Timer (TIM6)**
+  - Set TIM6 to trigger ADC at ~122.5 kHz.
+  - This aliases 20 MHz down to ~30.4 kHz (within measurable range).
+
+- [ ] **3.2 Implement DMA Buffer Capture**
+  - In `bsp_rf.c`, implement `BSP_RF_CaptureBuffer(float* buffer, size_t len)`.
+  - Use DMA to fill a buffer (e.g., 256 samples) from ADC.
+
+- [ ] **3.3 Implement DFT/Goertzel Algorithm**
+  - In `math_model.c`, implement Goertzel algorithm for single-frequency magnitude extraction.
+  - Target the alias frequency (~2.5 kHz).
+
+- [ ] **3.4 Update Measurement Logic**
+  - Modify `rf_measure.c` to use buffer+DFT method instead of single-point sampling.
+  - Return magnitude at each DAC voltage step.
+
+- [ ] **3.5 Signal Processing Test**
+  - Inject known signal and verify magnitude extraction.
+  - Plot sweep curve (Voltage vs. Magnitude) to verify resonance dip detection.
+
+---
+
+### Phase 4: Calibration & Measurement Algorithms
+
+> Implement the scientific measurement routines.
+
+- [ ] **4.1 Calibration Routine (Air Reference)**
+  - Coarse sweep: Sweep D1 (PA4) to find rough minimum (resonance frequency in air).
+  - Fine sweep: Adjust D2 (PA5) to optimize the minimum.
+  - Store reference voltage `V_Ref` and Q-factor baseline.
+
+- [ ] **4.2 Measurement Routine (Snow/Sample)**
+  - Fine sweep: Tune D1 to bring minimum back to 20 MHz in sample.
+  - Store measurement voltage `V_M` and Q-factor.
+
+- [ ] **4.3 Permittivity Calculation**
+  - Implement Denoth's formula: `ε' = 1 + k_D × log(V_M / V_Ref)`.
+  - Constant `k_D = 0.5963` (from BB353 varactor).
+  - Implement imaginary part: `ε'' = 1 / (ω × Rp × C0)`.
+
+---
+
+### Phase 5: User Interface & Communication
+
+> Display results and ensure robust communication.
+
+- [x] **5.1 Display Result on LCD**
+  - Update `FSM_HandleCalculation()` to format result (e.g., `E: 1.54 D: 0.32`).
+  - Display permittivity and density on LCD Line 2.
+
+- [x] **5.2 Verify UART Mirroring**
+  - Confirm `bt_manager.c` sends all outputs to both UART4 (BT) and USART2 (USB).
+  - Test with PC CLI (`tools/pc_cli.py`).
+
+- [x] **5.3 USB Input Handling**
+  - DONE in V2: USART2 RX is line-wise (Receive-to-Idle, DMA preferred) and feeds `BT_ProcessIncoming()` via `usb_cdc_bridge.c`.
+
+---
+
+### Phase 6: Power & Environmental Design
+
+> Prepare for field deployment.
+
+- [ ] **6.1 Low-Temperature Design**
+  - Select components rated for -40°C to +85°C.
+  - Test hardware operation at low temperature.
+
+- [ ] **6.2 Battery Support**
+  - Design battery/powerbank input circuitry.
+  - Select regulator (Buck/Boost) and calculate runtime.
+
+- [ ] **6.3 Shield Pinout Definition**
+  - Define "Permittivity Shield v1.0" using outer peripheral pins of Nucleo.
+  - Document final pinout and connector placement.
+
+---
+
+### Completed Tasks
+
+- [x] **Driver Verification** (01-Dec-2025)
+  - ADC driver (122.5 kHz sampling) – Verified.
+  - PWM driver (20 MHz output) – Verified.
+  - DAC driver (dual channel) – Verified.
+
+- [x] **External Crystal Selection** (07-Nov-2025)
+  - Part: 449-LFXTAL058284BULK (X3 on BOM).
+  - [Mouser Link](https://www.mouser.at/ProductDetail/IQD/LFXTAL058284Bulk?qs=sGAEpiMZZMsBj6bBr9Q9af1kE%252BXo19x3mGiGn1Dh61%2FyhX7eZvTWqw%3D%3D)
 
 ## 6. CLI Command Reference
 
@@ -389,6 +526,15 @@ In addition, the firmware pushes the updated buffer as `DAT:LCD:L<line>:<text>`.
 | :--- | :--- | :--- |
 | `CMD:HAL:NINA:RST:<state>` | Set reset pin (0=reset, 1=run) | `STAT:HAL_NINA:RESET` or `STAT:HAL_NINA:RUN` |
 | `CMD:HAL:NINA:STOP:<state>` | Set stop pin (0=run, 1=stop) | `STAT:HAL_NINA:RUNNING` or `STAT:HAL_NINA:STOPPED` |
+| `CMD:HAL:NINA:DTR:<state>` | Set DTR pin (0=low, 1=high) | `STAT:HAL_NINA_DTR_OK` + `STAT:HW:NINA:DTR:<state>` |
+| `CMD:HAL:NINA:DSR:READ` | Read DSR pin state | `STAT:HAL_NINA_DSR_OK` + `STAT:HW:NINA:DSR:<state>` |
+| `CMD:HAL:NINA:LED:<id>:READ` | Read NINA LED (0=R, 1=B, 2=G) | `STAT:HAL_NINA_LED_OK` + `STAT:HW:NINA:LED:<id>:<state>` |
+
+#### Op-Amp Control
+
+| Command | Description | Response |
+| :--- | :--- | :--- |
+| `CMD:HAL:OPAMP:DIS:<state>` | Set Op-Amp Disable (0=en, 1=dis) | `STAT:HAL_OPAMP_OK` + `STAT:HW:OPAMP:DIS:<state>` |
 
 #### Initialization
 
@@ -465,18 +611,18 @@ When running without real hardware (or when `bsp_rf.c` is in mock mode), the sys
 
 The mock generates a **parabolic dip (minimum)** to simulate the resonance circuit absorption.
 
-* **Formula**: $Amplitude = Base + Curvature \cdot (V_{dac} - V_{res})^2 + Noise$
-* **Behavior**: The firmware's peak detection algorithm looks for a **minimum** amplitude.
-* **Default**: A minimum at **1.2V** with a base amplitude of **1.0V**.
+- **Formula**: $Amplitude = Base + Curvature \cdot (V_{dac} - V_{res})^2 + Noise$
+- **Behavior**: The firmware's peak detection algorithm looks for a **minimum** amplitude.
+- **Default**: A minimum at **1.2V** with a base amplitude of **1.0V**.
 
 ### Verification
 
-* **Correctness**: The mock correctly produces a "U" shape, and the `rf_measure.c` logic correctly searches for a minimum (`if (amp < local_best_amp)`).
-* **Limitations**: The mock does not currently simulate the Q-factor change significantly (it only adds a small linear offset based on Q-voltage).
+- **Correctness**: The mock correctly produces a "U" shape, and the `rf_measure.c` logic correctly searches for a minimum (`if (amp < local_best_amp)`).
+- **Limitations**: The mock does not currently simulate the Q-factor change significantly (it only adds a small linear offset based on Q-voltage).
 
 ### Missing CLI Features (TODO)
 
-* **RF State Readback**: There is currently no command (e.g., `CMD:RF:STAT`) to read the instantaneous state of the RF hardware (Excitation On/Off, Current DAC Voltage). This must be inferred from `CMD:TRACE` or `CMD:LEDS` (Excite LED).
-* ~~**Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing.~~ **DONE**: `CMD:HAL:*` commands now provide direct hardware control (see Section 6: HAL Board Commands) (STILL NEEDS TO BE TESTED).
+- **RF State Readback**: There is currently no command (e.g., `CMD:RF:STAT`) to read the instantaneous state of the RF hardware (Excitation On/Off, Current DAC Voltage). This must be inferred from `CMD:TRACE` or `CMD:LEDS` (Excite LED).
+- ~~**Direct Hardware Control**: There are no commands to manually set DAC voltages or toggle pins for low-level testing.~~ **DONE**: `CMD:HAL:*` commands now provide direct hardware control (see Section 6: HAL Board Commands) (STILL NEEDS TO BE TESTED).
 
 For the current actionable task list, see [ToDos.md](ToDos.md).

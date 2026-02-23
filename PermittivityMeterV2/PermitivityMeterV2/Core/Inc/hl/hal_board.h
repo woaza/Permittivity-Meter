@@ -1,23 +1,44 @@
 /**
  * @file    hal_board.h
- * @brief   HAL Board Interface - Direct Hardware Control for Manual Mode
+ * @brief   HAL Board Interface - Direct Hardware Control for Manual Mode/CLI
  * @author  Majdedin Al Rashid
  * @version 1.0
  * @date    2025-12-09
  * 
- * @details This module provides direct hardware access for manual/debug operation.
- *          Unlike MockBoard (which is for simulation/state machine testing),
- *          this module directly controls real hardware via HAL drivers.
- *          
- *          Use Cases:
- *          - Manual LED control via CLI/UI
- *          - Direct ADC value reading
- *          - Direct DAC voltage setting
- *          - RF gain control
- *          - Button state reading
- *          
- *          Architecture:
- *              UI/CLI → HalBoard (this) → HAL (hal_gpio, hal_adc, hal_dac)
+ * @details 
+ * This module serves as a "Board Support Package" (BSP) for the low-level hardware
+ * controls that don't fit into a specific peripheral driver or aggregate multiple
+ * drivers. It is primarily used by the **Bluetooth CLI** and **Manual Mode** logic
+ * to directly manipulate the hardware for testing and debugging.
+ *
+ * **Architecture:**
+ * The `HalBoard` module sits above `hal_gpio`, `hal_adc`, and `hal_dac`, providing
+ * a unified interface for "board-level" operations like "Set LED" or "Read Voltage".
+ *
+ * @section board_usage Usage Examples
+ *
+ * **LED Control:**
+ * @code
+ * HalBoard_LED_Set(0, 1); // Turn ON LED 0 (Init Green)
+ * HalBoard_LED_Toggle(1); // Toggle LED 1 (Meas Blue)
+ * @endcode
+ *
+ * **Direct DAC/ADC Access:**
+ * @code
+ * // Set Frequency Tune DAC to 1.5V
+ * HalBoard_DAC_SetVoltage(0, 1500);
+ * 
+ * // Read current ADC voltage in millivolts
+ * uint16_t voltage_mv;
+ * HalBoard_ADC_ReadVoltage(&voltage_mv);
+ * @endcode
+ *
+ * **NINA Module Reset:**
+ * @code
+ * HalBoard_NINA_SetReset(0); // Assert Reset (Active Low)
+ * HAL_Delay(10);
+ * HalBoard_NINA_SetReset(1); // Release Reset
+ * @endcode
  */
 
 #ifndef HL_HAL_BOARD_H_
@@ -102,11 +123,11 @@ HalBoard_Status_t HalBoard_Button_Read(uint8_t *state);
 HalBoard_Status_t HalBoard_ADC_ReadSingle(uint16_t *value);
 
 /**
- * @brief Get ADC voltage representation.
- * @param voltage Pointer to store voltage (0.0V to 3.3V)
+ * @brief Get ADC voltage in millivolts (integer, no floating-point).
+ * @param voltage_mv Pointer to store voltage in mV (0 to 3300)
  * @retval HalBoard_Status_t status
  */
-HalBoard_Status_t HalBoard_ADC_ReadVoltage(float *voltage);
+HalBoard_Status_t HalBoard_ADC_ReadVoltage(uint16_t *voltage_mv);
 
 /**
  * @brief Check if ADC DMA buffer is ready.
@@ -121,10 +142,10 @@ bool HalBoard_ADC_IsBufferReady(void);
 /**
  * @brief Set DAC channel voltage directly.
  * @param channel 0=FREQ_TUNE (PA4), 1=Q_FACTOR (PA5)
- * @param voltage Voltage in range 0.0V to 3.3V
+ * @param voltage_mv Voltage in Millivolts (0 to 3300)
  * @retval HalBoard_Status_t status
  */
-HalBoard_Status_t HalBoard_DAC_SetVoltage(uint8_t channel, float voltage);
+HalBoard_Status_t HalBoard_DAC_SetVoltage(uint8_t channel, uint16_t voltage_mv);
 
 /**
  * @brief Set DAC channel raw value directly.
@@ -139,15 +160,15 @@ HalBoard_Status_t HalBoard_DAC_SetRaw(uint8_t channel, uint16_t raw_value);
 /* -------------------------------------------------------------------------- */
 
 /**
- * @brief Set RF gain via GPIO pins (2-bit encoding).
- * @param gain_level Gain level 0-3
+ * @brief Set RF gain via GPIO pins (3-bit encoding).
+ * @param gain_level Gain level 0-7
  * @retval HalBoard_Status_t status
  */
 HalBoard_Status_t HalBoard_RF_SetGain(uint8_t gain_level);
 
 /**
  * @brief Get current RF gain setting.
- * @param gain_level Pointer to store gain level (0-3)
+ * @param gain_level Pointer to store gain level (0-7)
  * @retval HalBoard_Status_t status
  */
 HalBoard_Status_t HalBoard_RF_GetGain(uint8_t *gain_level);
@@ -163,12 +184,28 @@ HalBoard_Status_t HalBoard_RF_GetGain(uint8_t *gain_level);
  */
 HalBoard_Status_t HalBoard_NINA_SetReset(uint8_t state);
 
+// HalBoard_NINA_SetStop removed
+// HalBoard_NINA_SetDTR removed
+// HalBoard_NINA_GetDSR removed
+
 /**
- * @brief Set NINA module stop pin.
- * @param state 0=run, 1=stop
+ * @brief Get NINA module LED state.
+ * @param led_id 0=RED, 1=BLUE, 2=GREEN
+ * @param state Pointer to store state (0=low, 1=high)
  * @retval HalBoard_Status_t status
  */
-HalBoard_Status_t HalBoard_NINA_SetStop(uint8_t state);
+HalBoard_Status_t HalBoard_NINA_GetLED(uint8_t led_id, uint8_t *state);
+
+/* -------------------------------------------------------------------------- */
+/*                              Op-Amp Control                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Set Op-Amp Disable pin.
+ * @param state 0=enable (low), 1=disable (high)
+ * @retval HalBoard_Status_t status
+ */
+HalBoard_Status_t HalBoard_OpAmp_SetDisable(uint8_t state);
 
 #ifdef __cplusplus
 }

@@ -17,6 +17,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "hl/hal_dac.h"
 #include "main.h"
+#include "hl/hal_dac_lookup.h"
 
 /* Private variables ---------------------------------------------------------*/
 static DAC_HandleTypeDef *hdac_local = NULL;
@@ -54,23 +55,30 @@ DAC_StatusTypeDef HL_DAC_Init(DAC_HandleTypeDef *hdac)
 /**
  * @brief Set DAC output voltage for a specific channel
  * @param channel: DAC channel (DAC_CH_FREQ_TUNE or DAC_CH_Q_FACTOR)
- * @param voltage: Desired voltage in Volts (0.0 to 3.3)
+ * @param voltage_mv: Desired voltage in Millivolts (0 to 3300)
  * @retval DAC_StatusTypeDef: Status of operation
  */
-DAC_StatusTypeDef HL_DAC_SetVoltage(DAC_ChannelTypeDef channel, float voltage)
+DAC_StatusTypeDef HL_DAC_SetVoltage(DAC_ChannelTypeDef channel, uint16_t voltage_mv)
 {
     if (hdac_local == NULL)
     {
         return DAC_ERROR_NOT_INITIALIZED;
     }
 
-    if (voltage < 0.0f || voltage > DAC_VOLTAGE_REF)
+    if (voltage_mv > DAC_VOLTAGE_REF_MV)
     {
         return DAC_ERROR_INVALID_PARAM;
     }
 
-    // Calculate raw value: (Voltage / Vref) * MaxValue
-    uint32_t raw_value = (uint32_t)((voltage / DAC_VOLTAGE_REF) * DAC_MAX_VALUE);
+    // Direct lookup - no math required!
+    // Safety check for array bounds (redundant due to check above but good practice)
+    uint32_t index = (uint32_t)voltage_mv;
+    if (index >= DAC_LUT_SIZE)
+    {
+        index = DAC_LUT_SIZE - 1;
+    }
+
+    uint32_t raw_value = DAC_LUT[index];
 
     return HL_DAC_SetRawValue(channel, raw_value);
 }

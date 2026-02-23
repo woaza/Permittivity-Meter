@@ -184,9 +184,9 @@ HalBoard_Status_t HalBoard_ADC_ReadSingle(uint16_t *value)
     return HAL_BOARD_OK;
 }
 
-HalBoard_Status_t HalBoard_ADC_ReadVoltage(float *voltage)
+HalBoard_Status_t HalBoard_ADC_ReadVoltage(uint16_t *voltage_mv)
 {
-    if (voltage == NULL)
+    if (voltage_mv == NULL)
     {
         return HAL_BOARD_ERROR_INVALID_PARAM;
     }
@@ -199,8 +199,9 @@ HalBoard_Status_t HalBoard_ADC_ReadVoltage(float *voltage)
         return status;
     }
 
-    /* Convert to voltage: (raw / 4095) * 3.3V */
-    *voltage = ((float)raw_value / 4095.0f) * 3.3f;
+    /* Convert to millivolts: (raw / 4095) * 3300 mV
+     * Use uint32_t to prevent overflow: max = 4095 * 3300 = 13,513,500 */
+    *voltage_mv = (uint16_t)((uint32_t)raw_value * 3300U / 4095U);
     return HAL_BOARD_OK;
 }
 
@@ -213,21 +214,21 @@ bool HalBoard_ADC_IsBufferReady(void)
 /*                              DAC Control                                   */
 /* -------------------------------------------------------------------------- */
 
-HalBoard_Status_t HalBoard_DAC_SetVoltage(uint8_t channel, float voltage)
+HalBoard_Status_t HalBoard_DAC_SetVoltage(uint8_t channel, uint16_t voltage_mv)
 {
     if (channel > 1)
     {
         return HAL_BOARD_ERROR_INVALID_PARAM;
     }
 
-    if (voltage < 0.0f || voltage > 3.3f)
+    if (voltage_mv > 3300)
     {
         return HAL_BOARD_ERROR_INVALID_PARAM;
     }
 
     DAC_ChannelTypeDef dac_ch = channel_id_to_dac(channel);
     
-    if (HL_DAC_SetVoltage(dac_ch, voltage) != DAC_OK)
+    if (HL_DAC_SetVoltage(dac_ch, voltage_mv) != DAC_OK)
     {
         return HAL_BOARD_ERROR;
     }
@@ -263,14 +264,15 @@ HalBoard_Status_t HalBoard_DAC_SetRaw(uint8_t channel, uint16_t raw_value)
 
 HalBoard_Status_t HalBoard_RF_SetGain(uint8_t gain_level)
 {
-    if (gain_level > 3)
+    if (gain_level > 7)
     {
         return HAL_BOARD_ERROR_INVALID_PARAM;
     }
 
-    /* Gain is encoded in 2 bits: GAIN_0 (LSB) and GAIN_1 (MSB) */
+    /* Gain is encoded in 3 bits: GAIN_0 (LSB), GAIN_1, GAIN_2 (MSB) */
     HL_GPIO_State_t bit0 = (gain_level & 0x01) ? HL_GPIO_HIGH : HL_GPIO_LOW;
     HL_GPIO_State_t bit1 = (gain_level & 0x02) ? HL_GPIO_HIGH : HL_GPIO_LOW;
+    HL_GPIO_State_t bit2 = (gain_level & 0x04) ? HL_GPIO_HIGH : HL_GPIO_LOW;
 
     if (HL_GPIO_Write(HL_GPIO_RF_GAIN_0, bit0) != GPIO_OK)
     {
@@ -278,6 +280,11 @@ HalBoard_Status_t HalBoard_RF_SetGain(uint8_t gain_level)
     }
 
     if (HL_GPIO_Write(HL_GPIO_RF_GAIN_1, bit1) != GPIO_OK)
+    {
+        return HAL_BOARD_ERROR;
+    }
+
+    if (HL_GPIO_Write(HL_GPIO_RF_GAIN_2, bit2) != GPIO_OK)
     {
         return HAL_BOARD_ERROR;
     }
@@ -294,6 +301,7 @@ HalBoard_Status_t HalBoard_RF_GetGain(uint8_t *gain_level)
 
     HL_GPIO_State_t bit0 = HL_GPIO_LOW;
     HL_GPIO_State_t bit1 = HL_GPIO_LOW;
+    HL_GPIO_State_t bit2 = HL_GPIO_LOW;
 
     if (HL_GPIO_Read(HL_GPIO_RF_GAIN_0, &bit0) != GPIO_OK)
     {
@@ -305,7 +313,13 @@ HalBoard_Status_t HalBoard_RF_GetGain(uint8_t *gain_level)
         return HAL_BOARD_ERROR;
     }
 
-    *gain_level = ((bit1 == HL_GPIO_HIGH) ? 2U : 0U) | 
+    if (HL_GPIO_Read(HL_GPIO_RF_GAIN_2, &bit2) != GPIO_OK)
+    {
+        return HAL_BOARD_ERROR;
+    }
+
+    *gain_level = ((bit2 == HL_GPIO_HIGH) ? 4U : 0U) |
+                  ((bit1 == HL_GPIO_HIGH) ? 2U : 0U) | 
                   ((bit0 == HL_GPIO_HIGH) ? 1U : 0U);
     return HAL_BOARD_OK;
 }
@@ -326,11 +340,46 @@ HalBoard_Status_t HalBoard_NINA_SetReset(uint8_t state)
     return HAL_BOARD_OK;
 }
 
-HalBoard_Status_t HalBoard_NINA_SetStop(uint8_t state)
+// HalBoard_NINA_SetStop removed (Pin PA12 not in main.h)
+// HalBoard_NINA_SetDTR removed (Pin PB11 not in main.h)
+// HalBoard_NINA_GetDSR removed (Pin PB12 not in main.h)
+
+HalBoard_Status_t HalBoard_NINA_GetLED(uint8_t led_id, uint8_t *state)
+{
+    if (state == NULL || led_id > 2)
+    {
+        return HAL_BOARD_ERROR_INVALID_PARAM;
+    }
+
+    HL_GPIO_Pin_t pin;
+    switch (led_id)
+    {
+        case 0: pin = HL_GPIO_NINA_LED_RED; break;
+        case 1: pin = HL_GPIO_NINA_LED_BLUE; break;
+        case 2: pin = HL_GPIO_NINA_LED_GREEN; break;
+        default: return HAL_BOARD_ERROR_INVALID_PARAM;
+    }
+
+    HL_GPIO_State_t gpio_state = HL_GPIO_LOW;
+    
+    if (HL_GPIO_Read(pin, &gpio_state) != GPIO_OK)
+    {
+        return HAL_BOARD_ERROR;
+    }
+
+    *state = (gpio_state == HL_GPIO_HIGH) ? 1U : 0U;
+    return HAL_BOARD_OK;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Op-Amp Control                                */
+/* -------------------------------------------------------------------------- */
+
+HalBoard_Status_t HalBoard_OpAmp_SetDisable(uint8_t state)
 {
     HL_GPIO_State_t gpio_state = state ? HL_GPIO_HIGH : HL_GPIO_LOW;
     
-    if (HL_GPIO_Write(HL_GPIO_NINA_STOP, gpio_state) != GPIO_OK)
+    if (HL_GPIO_Write(HL_GPIO_OP_DIS, gpio_state) != GPIO_OK)
     {
         return HAL_BOARD_ERROR;
     }

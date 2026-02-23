@@ -98,7 +98,7 @@ void Test_HL_DAC_GenerateWaveform(DAC_HandleTypeDef *hdac, IWDG_HandleTypeDef *h
     HL_DAC_Start(DAC_CH_Q_FACTOR);
 
     int cycle_count = 0;
-    while (cycle_count < 5)
+    while (1)
     {
         /* Refresh Watchdog */
         if (hiwdg != NULL)

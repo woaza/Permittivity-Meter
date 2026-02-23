@@ -68,15 +68,17 @@
  * @endcode
  * 
  * @section rf_control RF Gain Control
- * Two GPIO pins control RF amplifier gain (binary encoding):
+ * Three GPIO pins control RF amplifier gain (3-bit binary encoding, 8 levels):
  * @code
- * // Set gain level 0 (both LOW)
+ * // Set gain level 0 (all LOW)
  * HL_GPIO_Write(HL_GPIO_RF_GAIN_0, HL_GPIO_LOW);
  * HL_GPIO_Write(HL_GPIO_RF_GAIN_1, HL_GPIO_LOW);
+ * HL_GPIO_Write(HL_GPIO_RF_GAIN_2, HL_GPIO_LOW);
  * 
- * // Set gain level 3 (both HIGH)
+ * // Set gain level 7 (all HIGH)
  * HL_GPIO_Write(HL_GPIO_RF_GAIN_0, HL_GPIO_HIGH);
  * HL_GPIO_Write(HL_GPIO_RF_GAIN_1, HL_GPIO_HIGH);
+ * HL_GPIO_Write(HL_GPIO_RF_GAIN_2, HL_GPIO_HIGH);
  * @endcode
  * 
  * @section errors Error Handling
@@ -89,17 +91,18 @@
  * @endcode
  * 
  * @section pin_table Pin Reference Table
+ * @section pin_table Pin Reference Table
  * | Logical Name       | Physical Pin | Direction | Description          |
  * |--------------------|--------------|-----------|----------------------|
  * | HL_GPIO_LED_INIT   | PA6          | Output    | Init/Idle LED (Green)|
- * | HL_GPIO_LED_MEAS   | PA7          | Output    | Measure LED (Blue)   |
- * | HL_GPIO_LED_EXCITE | PC7          | Output    | Excite LED (Yellow)  |
- * | HL_GPIO_LED_ERR    | PB1          | Output    | Error LED (Red)      |
+ * | HL_GPIO_LED_MEAS   | PC9          | Output    | Measure LED (Blue)   |
+ * | HL_GPIO_LED_EXCITE | PC8          | Output    | Excite LED (Yellow)  |
+ * | HL_GPIO_LED_ERR    | PC6          | Output    | Error LED (Red)      |
  * | HL_GPIO_BTN_USER   | PC13         | Input     | User Button          |
- * | HL_GPIO_RF_GAIN_0  | PC8          | Output    | RF Gain Bit 0        |
- * | HL_GPIO_RF_GAIN_1  | PC9          | Output    | RF Gain Bit 1        |
+ * | HL_GPIO_RF_GAIN_0  | PC3          | Output    | RF Gain Bit 0        |
+ * | HL_GPIO_RF_GAIN_1  | PC1          | Output    | RF Gain Bit 1        |
+ * | HL_GPIO_RF_GAIN_2  | PB0          | Output    | RF Gain Bit 2        |
  * | HL_GPIO_NINA_RST   | PA11         | Output    | BLE Module Reset     |
- * | HL_GPIO_NINA_STOP  | PA12         | Output    | BLE Module Stop      |
  */
 
 #ifndef HL_HAL_GPIO_H_
@@ -119,20 +122,31 @@ typedef enum
 {
     /* LEDs */
     HL_GPIO_LED_INIT   = 0,  /**< Init/Idle LED (Green) - PA6 */
-    HL_GPIO_LED_MEAS   = 1,  /**< Measurement LED (Blue) - PA7 */
-    HL_GPIO_LED_EXCITE = 2,  /**< RF Excitation LED (Yellow) - PC7 */
-    HL_GPIO_LED_ERR    = 3,  /**< Error LED (Red) - PB1 */
+    HL_GPIO_LED_MEAS   = 1,  /**< Measurement LED (Blue) - PC9 */
+    HL_GPIO_LED_EXCITE = 2,  /**< RF Excitation LED (Yellow) - PC8 */
+    HL_GPIO_LED_ERR    = 3,  /**< Error LED (Red) - PC6 */
 
     /* Inputs */
     HL_GPIO_BTN_USER   = 4,  /**< User Button - PC13 */
 
     /* RF Control */
-    HL_GPIO_RF_GAIN_0  = 5,  /**< RF Gain Select Bit 0 - PC8 */
-    HL_GPIO_RF_GAIN_1  = 6,  /**< RF Gain Select Bit 1 - PC9 */
+    HL_GPIO_RF_GAIN_0  = 5,  /**< RF Gain Select Bit 0 - PC3 */
+    HL_GPIO_RF_GAIN_1  = 6,  /**< RF Gain Select Bit 1 - PC1 */
+    HL_GPIO_RF_GAIN_2  = 15, /**< RF Gain Select Bit 2 - PB0 */
 
     /* NINA Module Control */
     HL_GPIO_NINA_RST   = 7,  /**< NINA Reset - PA11 */
-    HL_GPIO_NINA_STOP  = 8,  /**< NINA Stop - PA12 */
+    // HL_GPIO_NINA_STOP  = 8,  /**< NINA Stop - Removed */
+    // HL_GPIO_NINA_DTR   = 9,  /**< NINA DTR - Removed */
+    // HL_GPIO_NINA_DSR   = 10, /**< NINA DSR - Removed */
+
+    /* NINA Status LEDs */
+    HL_GPIO_NINA_LED_RED   = 11, /**< NINA Red LED - PC15 */
+    HL_GPIO_NINA_LED_BLUE  = 12, /**< NINA Blue LED - PC14 */
+    HL_GPIO_NINA_LED_GREEN = 13, /**< NINA Green LED - PC2 */
+
+    /* Other Control */
+    HL_GPIO_OP_DIS     = 14, /**< Op-Amp Disable - PC4 */
 
     HL_GPIO_PIN_COUNT        /**< Total number of defined pins */
 } HL_GPIO_Pin_t;

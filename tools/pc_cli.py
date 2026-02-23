@@ -41,6 +41,14 @@ COMMAND_MAP = {
     "lcd": "CMD:LCD",
     "log": "CMD:LOG",
     "trace": "CMD:TRACE",
+    "nina-dtr-on": "CMD:HAL:NINA:DTR:1",
+    "nina-dtr-off": "CMD:HAL:NINA:DTR:0",
+    "nina-dsr": "CMD:HAL:NINA:DSR:READ",
+    "nina-led-r": "CMD:HAL:NINA:LED:0:READ",
+    "nina-led-b": "CMD:HAL:NINA:LED:1:READ",
+    "nina-led-g": "CMD:HAL:NINA:LED:2:READ",
+    "opamp-dis": "CMD:HAL:OPAMP:DIS:1",
+    "opamp-en": "CMD:HAL:OPAMP:DIS:0",
 }
 
 

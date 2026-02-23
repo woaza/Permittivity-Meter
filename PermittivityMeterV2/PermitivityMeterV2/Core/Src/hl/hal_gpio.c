@@ -22,6 +22,10 @@ typedef struct
     uint16_t      pin;
 } GPIO_PinMap_t;
 
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
+
 /* -------------------------------------------------------------------------- */
 /*                              Private Data                                  */
 /* -------------------------------------------------------------------------- */
@@ -40,7 +44,14 @@ static const GPIO_PinMap_t gpio_pin_map[HL_GPIO_PIN_COUNT] =
     /* HL_GPIO_RF_GAIN_0  */ { GAIN_SLCT_1_GPIO_Port, GAIN_SLCT_1_Pin },
     /* HL_GPIO_RF_GAIN_1  */ { GAIN_SLCT_2_GPIO_Port, GAIN_SLCT_2_Pin },
     /* HL_GPIO_NINA_RST   */ { NINA_RST_GPIO_Port,   NINA_RST_Pin   },
-    /* HL_GPIO_NINA_STOP  */ { NINA_STOP_GPIO_Port,  NINA_STOP_Pin  },
+    /* HL_GPIO_NINA_STOP  */ { NULL, 0 }, // Removed
+    /* HL_GPIO_NINA_DTR   */ { NULL, 0 }, // Removed
+    /* HL_GPIO_NINA_DSR   */ { NULL, 0 }, // Removed
+    /* HL_GPIO_NINA_LED_RED   */ { NINA_LED_RED_GPIO_Port,   NINA_LED_RED_Pin   },
+    /* HL_GPIO_NINA_LED_BLUE  */ { NINA_LED_BLUE_GPIO_Port,  NINA_LED_BLUE_Pin  },
+    /* HL_GPIO_NINA_LED_GREEN */ { NINA_LED_GREEN_GPIO_Port, NINA_LED_GREEN_Pin },
+    /* HL_GPIO_OP_DIS     */ { OP_DIS_GPIO_Port,     OP_DIS_Pin     },
+    /* HL_GPIO_RF_GAIN_2  */ { GAIN_SLCT_3_GPIO_Port, GAIN_SLCT_3_Pin },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -65,6 +76,11 @@ HL_GPIO_Status_t HL_GPIO_Write(HL_GPIO_Pin_t pin, HL_GPIO_State_t state)
     }
 
     const GPIO_PinMap_t *mapping = &gpio_pin_map[pin];
+    if (mapping->port == NULL)
+    {
+        return GPIO_ERROR;
+    }
+
     GPIO_PinState hal_state = (state == HL_GPIO_HIGH) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 
     HAL_GPIO_WritePin(mapping->port, mapping->pin, hal_state);
@@ -80,6 +96,11 @@ HL_GPIO_Status_t HL_GPIO_Toggle(HL_GPIO_Pin_t pin)
     }
 
     const GPIO_PinMap_t *mapping = &gpio_pin_map[pin];
+    if (mapping->port == NULL)
+    {
+        return GPIO_ERROR;
+    }
+
     HAL_GPIO_TogglePin(mapping->port, mapping->pin);
 
     return GPIO_OK;
@@ -93,6 +114,11 @@ HL_GPIO_Status_t HL_GPIO_Read(HL_GPIO_Pin_t pin, HL_GPIO_State_t *state)
     }
 
     const GPIO_PinMap_t *mapping = &gpio_pin_map[pin];
+    if (mapping->port == NULL)
+    {
+        return GPIO_ERROR;
+    }
+
     GPIO_PinState hal_state = HAL_GPIO_ReadPin(mapping->port, mapping->pin);
 
     *state = (hal_state == GPIO_PIN_SET) ? HL_GPIO_HIGH : HL_GPIO_LOW;

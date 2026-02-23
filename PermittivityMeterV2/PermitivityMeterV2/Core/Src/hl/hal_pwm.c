@@ -7,7 +7,7 @@
   ******************************************************************************
   * @attention
   *
-  * This file provides PWM functionality for TIM1 CH2 (PA9 - SQR_20M_OUT).
+  * This file provides PWM functionality for TIM2 CH1 (PA0 - SQR_20M_OUT).
   * The timer is configured to generate a square wave at the desired frequency
   * and duty cycle.
   *
@@ -19,7 +19,7 @@
 #include "main.h"
 
 /* Private defines -----------------------------------------------------------*/
-#define PWM_CHANNEL         TIM_CHANNEL_2
+#define PWM_CHANNEL         TIM_CHANNEL_1
 #define PWM_TIMER_CLOCK     80000000UL  // TIM1 clock frequency (80 MHz from SYSCLK)
 
 /* Private variables ---------------------------------------------------------*/
@@ -149,7 +149,8 @@ PWM_StatusTypeDef HAL_PWM_Init(TIM_HandleTypeDef *htim)
     uint32_t period = htim_pwm->Init.Period;
 
     // Calculate current frequency from CubeMX settings
-    pwm_frequency = PWM_TIMER_CLOCK / ((prescaler + 1) * (period + 1));
+    uint64_t period_calc = (uint64_t)period + 1;
+    pwm_frequency = (uint32_t)(PWM_TIMER_CLOCK / ((prescaler + 1) * period_calc));
 
     // Read current pulse value to determine duty cycle
     uint32_t pulse = __HAL_TIM_GET_COMPARE(htim_pwm, PWM_CHANNEL);
@@ -289,11 +290,11 @@ bool HAL_PWM_IsRunning(void)
  */
 void HAL_PWM_Pulse_Update(void)
 {
-    static uint8_t duty = 0;
-    static int8_t step = 1;
+    static int16_t duty = 0;
+    static int16_t step = 1;
 
-    HAL_PWM_SetDutyCycle(duty);
+    HAL_PWM_SetDutyCycle((uint8_t)duty);
     duty += step;
-    if (duty >= 100) step = -1;
-    if (duty <= 0) step = 1;
+    if (duty >= 100) { duty = 100; step = -1; }
+    if (duty <= 0)   { duty = 0;   step = 1;  }
 }

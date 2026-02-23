@@ -1,4 +1,5 @@
 #include "rf_measure.h"
+#include "main.h"
 
 #include <float.h>
 #include <math.h>
@@ -43,6 +44,11 @@ static float sample_at(float freq_voltage, float q_voltage, uint8_t gain_idx, fl
     BSP_RF_SetGain(gain_idx);
     BSP_RF_SetFreqVaricap(freq_voltage);
     BSP_RF_SetQVaricap(q_voltage);
+    
+    /* Task 2.3: Settling Delay */
+    /* Ensure varactors and op-amps stabilize before sampling. */
+    //HAL_Delay(1); 
+
     const float amplitude = BSP_RF_ReadAmplitude();
     RF_Trace_Add(freq_voltage, amplitude);
     if (out_amp != NULL) {

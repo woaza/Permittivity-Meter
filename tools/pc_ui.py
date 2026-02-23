@@ -54,6 +54,10 @@ CMD = {
     "btn_release": "CMD:BTN:RELEASE",
     "lcd": "CMD:LCD",
     "leds": "CMD:LEDS",
+    "nina_dsr": "CMD:HAL:NINA:DSR:READ",
+    "nina_led_r": "CMD:HAL:NINA:LED:0:READ",
+    "nina_led_b": "CMD:HAL:NINA:LED:1:READ",
+    "nina_led_g": "CMD:HAL:NINA:LED:2:READ",
 }
 
 
@@ -130,6 +134,10 @@ class AppState:
         self.gain_level: Optional[int] = None
         self.nina_rst: Optional[int] = None
         self.nina_stop: Optional[int] = None
+        self.nina_dtr: Optional[int] = None
+        self.nina_dsr: Optional[int] = None
+        self.nina_leds: dict[int, int] = {0: 0, 1: 0, 2: 0}
+        self.opamp_dis: Optional[int] = None
 
         self.pwm_running: Optional[int] = None
         self.pwm_freq_hz: Optional[int] = None
@@ -138,6 +146,7 @@ class AppState:
         self.btn_pressed: Optional[int] = None
         self._last_slider_tx: dict[int, float] = {0: 0.0, 1: 0.0}
         self._last_poll_s: float = 0.0
+        self._last_slow_poll_s: float = 0.0
 
 
 def _led_color(key: str, on: int) -> str:
@@ -312,11 +321,32 @@ def build_layout() -> list[list[sg.Element]]:
             sg.Text("?", key="-NINA-RST-", size=(6, 1), relief=sg.RELIEF_SUNKEN),
             sg.Text("STOP:"),
             sg.Text("?", key="-NINA-STOP-", size=(6, 1), relief=sg.RELIEF_SUNKEN),
+            sg.Text("DTR:"),
+            sg.Text("?", key="-NINA-DTR-", size=(6, 1), relief=sg.RELIEF_SUNKEN),
+            sg.Text("DSR:"),
+            sg.Text("?", key="-NINA-DSR-", size=(6, 1), relief=sg.RELIEF_SUNKEN),
         ],
         [
             sg.Checkbox("RST=1 (run)", key="-NINA-RST-SET-", enable_events=True),
             sg.Checkbox("STOP=1", key="-NINA-STOP-SET-", enable_events=True),
+            sg.Checkbox("DTR=1", key="-NINA-DTR-SET-", enable_events=True),
+            sg.Button("Read DSR", key="-NINA-DSR-READ-"),
         ],
+        [
+            sg.Text("LEDs:"),
+            sg.Text("RED", key="-NINA-LED-0-", size=(5, 1), relief=sg.RELIEF_SUNKEN, background_color=LED_COLORS["off"], text_color="white", justification="center"),
+            sg.Text("BLUE", key="-NINA-LED-1-", size=(5, 1), relief=sg.RELIEF_SUNKEN, background_color=LED_COLORS["off"], text_color="white", justification="center"),
+            sg.Text("GREEN", key="-NINA-LED-2-", size=(6, 1), relief=sg.RELIEF_SUNKEN, background_color=LED_COLORS["off"], text_color="white", justification="center"),
+            sg.Button("Read LEDs", key="-NINA-LEDS-READ-"),
+        ]
+    ]
+
+    opamp_frame = [
+        [
+            sg.Text("OpAmp DIS:"),
+            sg.Text("?", key="-OPAMP-DIS-", size=(6, 1), relief=sg.RELIEF_SUNKEN),
+            sg.Checkbox("Disable (1)", key="-OPAMP-DIS-SET-", enable_events=True),
+        ]
     ]
 
     button_frame = [
@@ -354,6 +384,7 @@ def build_layout() -> list[list[sg.Element]]:
             sg.Frame("PWM / Excitation", pwm_frame),
             sg.Frame("RF Gain", gain_frame),
             sg.Frame("NINA", nina_frame),
+            sg.Frame("OpAmp", opamp_frame),
         ],
         [sg.Frame("Serial", serial_frame, expand_x=True)],
     ]
@@ -487,7 +518,7 @@ def parse_hw_report(line: str, state: AppState, window: sg.Window) -> None:
         window["-GAIN-"].update(str(level))
         return
 
-    # NINA: STAT:HW:NINA:RST:<0/1>  / STOP
+    # NINA: STAT:HW:NINA:RST:<0/1>  / STOP / DTR / DSR / LED:<id>:<0/1>
     if len(parts) >= 5 and parts[2] == "NINA":
         field = parts[3]
         try:
@@ -502,6 +533,35 @@ def parse_hw_report(line: str, state: AppState, window: sg.Window) -> None:
             state.nina_stop = value
             window["-NINA-STOP-"].update(str(value))
             window["-NINA-STOP-SET-"].update(value=bool(value))
+        elif field == "DTR":
+            state.nina_dtr = value
+            window["-NINA-DTR-"].update(str(value))
+            window["-NINA-DTR-SET-"].update(value=bool(value))
+        elif field == "DSR":
+            state.nina_dsr = value
+            window["-NINA-DSR-"].update(str(value))
+        elif field == "LED":
+            # STAT:HW:NINA:LED:<id>:<state>
+            if len(parts) >= 6:
+                try:
+                    led_state = int(parts[5])
+                except ValueError:
+                    return
+                state.nina_leds[value] = led_state
+                window[f"-NINA-LED-{value}-"].update(background_color=_led_color("on", led_state))
+        return
+
+    # OpAmp: STAT:HW:OPAMP:DIS:<0/1>
+    if len(parts) >= 5 and parts[2] == "OPAMP":
+        field = parts[3]
+        try:
+            value = int(parts[4])
+        except ValueError:
+            return
+        if field == "DIS":
+            state.opamp_dis = value
+            window["-OPAMP-DIS-"].update(str(value))
+            window["-OPAMP-DIS-SET-"].update(value=bool(value))
         return
 
 
@@ -699,6 +759,19 @@ def run_ui(args: argparse.Namespace) -> int:
             send_command_ui(state, window, f"CMD:HAL:NINA:RST:{1 if bool(values.get('-NINA-RST-SET-')) else 0}")
         elif event == "-NINA-STOP-SET-":
             send_command_ui(state, window, f"CMD:HAL:NINA:STOP:{1 if bool(values.get('-NINA-STOP-SET-')) else 0}")
+        elif event == "-NINA-DTR-SET-":
+            send_command_ui(state, window, f"CMD:HAL:NINA:DTR:{1 if bool(values.get('-NINA-DTR-SET-')) else 0}")
+        elif event == "-NINA-DSR-READ-":
+            send_command_ui(state, window, "CMD:HAL:NINA:DSR:READ")
+        elif event == "-NINA-LEDS-READ-":
+            send_many(state, window, [
+                "CMD:HAL:NINA:LED:0:READ",
+                "CMD:HAL:NINA:LED:1:READ",
+                "CMD:HAL:NINA:LED:2:READ"
+            ], delay_s=0.05)
+        
+        elif event == "-OPAMP-DIS-SET-":
+            send_command_ui(state, window, f"CMD:HAL:OPAMP:DIS:{1 if bool(values.get('-OPAMP-DIS-SET-')) else 0}")
 
         elif event == "-RAW-SEND-":
             raw = str(values.get("-RAW-", "")).strip()
@@ -771,6 +844,17 @@ def run_ui(args: argparse.Namespace) -> int:
             if now - state._last_poll_s >= max(0.2, interval):
                 state._last_poll_s = now
                 send_refresh(state, window)
+            
+            # Slow polling for read-only signals (DSR, NINA LEDs) every 5 seconds
+            if now - state._last_slow_poll_s >= 5.0:
+                state._last_slow_poll_s = now
+                if state.is_manual:
+                    send_many(state, window, [
+                        "CMD:HAL:NINA:DSR:READ",
+                        "CMD:HAL:NINA:LED:0:READ",
+                        "CMD:HAL:NINA:LED:1:READ",
+                        "CMD:HAL:NINA:LED:2:READ"
+                    ], delay_s=0.05)
 
         if state.client:
             for line in state.client.poll():

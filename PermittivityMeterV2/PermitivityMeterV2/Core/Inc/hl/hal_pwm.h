@@ -1,15 +1,38 @@
 /**
   ******************************************************************************
   * @file    hal_pwm.h
-  * @brief   Header file for PWM hardware abstraction layer
+  * @brief   Hardware Abstraction Layer for 20 MHz Excitation PWM
   * @author  Majdedin Al Rashid
   * @date    18.11.2025
   ******************************************************************************
-  * @attention
+  * @details
+  * This module controls the generation of the 20 MHz square wave signal used
+  * to excite the LC tank circuit. It wraps the STM32 TIM2 peripheral.
   *
-  * This file provides an abstraction layer for PWM generation on TIM1 CH2.
-  * The PWM output is connected to PA9 (SQR_20M_OUT).
+  * **Configuration:**
+  * - **Timer**: TIM2 Channel 1
+  * - **Output Pin**: PA0 (SQR_20M_OUT)
+  * - **Target Frequency**: 20 MHz
   *
+  * @section pwm_usage How to Use
+  *
+  * 1. **Initialization**:
+  *    @code
+  *    HAL_PWM_Init(&htim2);
+  *    @endcode
+  *
+  * 2. **Configure Signal**:
+  *    @code
+  *    HAL_PWM_SetFrequency(20000000); // 20 MHz
+  *    HAL_PWM_SetDutyCycle(50);       // 50% Duty Cycle
+  *    @endcode
+  *
+  * 3. **Control Output**:
+  *    @code
+  *    HAL_PWM_Start(); // Signal active on PA0
+  *    // ... measurement ...
+  *    HAL_PWM_Stop();  // Signal inactive
+  *    @endcode
   ******************************************************************************
   */
 
